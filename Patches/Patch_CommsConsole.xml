@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <Operation Class="PatchOperationAdd">
+    <xpath>/Defs/ThingDef[defName="CommsConsole"]/comps</xpath>
+    <value>
+      <li Class="SignalInterceptor.CompProperties_SignalInterceptor">
+        <scanFindMtbDays>5</scanFindMtbDays>
+        <scanFindGuaranteedDays>12</scanFindGuaranteedDays>
+        <scanDurationTicks>5000</scanDurationTicks>
+      </li>
+    </value>
+  </Operation>
+</Patch>

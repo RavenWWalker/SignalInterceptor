@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorkTypeDef>
+    <defName>SignalInterceptor_Scanning</defName>
+    <labelShort>Scan</labelShort>
+    <label>scanning</label>
+    <verb>scan</verb>
+    <gerundLabel>scanning for signals</gerundLabel>
+    <description>Intercept and decrypt faction transmissions at a comms console.</description>
+    <workTags>
+      <li>Intellectual</li>
+    </workTags>
+    <relevantSkills>
+      <li>Intellectual</li>
+    </relevantSkills>
+    <naturalPriority>40</naturalPriority>
+    <alwaysStartActive>false</alwaysStartActive>
+  </WorkTypeDef>
+</Defs>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <SI_CloneInstability.label>клеточная нестабильность</SI_CloneInstability.label>
+  <SI_CloneInstability.description>Тело этого клона генетически нестабильно, что делает его крайне уязвимым к повреждениям.</SI_CloneInstability.description>
+
+  <SI_CloneBleedRate.label>геморрагия</SI_CloneBleedRate.label>
+  <SI_CloneBleedRate.description>Кровь этого клона не сворачивается должным образом, что вызывает стремительную кровопотерю при малейшем порезе.\n\n  - Потеря крови: х300%</SI_CloneBleedRate.description>
+
+  <SI_DoppelgangerMark.label>двойник</SI_DoppelgangerMark.label>
+  <SI_DoppelgangerMark.description>Эта пешка — клон, один из множества идентичных двойников.</SI_DoppelgangerMark.description>
+  <SI_DoppelgangerMark.stages.0.label>клон</SI_DoppelgangerMark.stages.0.label>
+</LanguageData>

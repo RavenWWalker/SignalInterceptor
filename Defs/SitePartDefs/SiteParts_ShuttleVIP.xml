@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+<SitePartDef>
+    <defName>SI_ShuttleVIPSite</defName>
+    <label>shuttle landing site</label>
+    <description>A landing pad with a grounded shuttle and its VIP passenger, protected by armed guards.</description>
+    <siteTexture>World/WorldObjects/Sites/Outpost</siteTexture>
+    <expandingIconTexture>World/WorldObjects/Sites/SI_ShuttleVIP</expandingIconTexture>
+    <applyFactionColorToSiteTexture>true</applyFactionColorToSiteTexture>
+    <approachOrderString>Raid the shuttle landing site</approachOrderString>
+    <approachingReportString>Approaching the shuttle landing site</approachingReportString>
+    <wantsThreatPoints>true</wantsThreatPoints>
+    <defaultHidden>false</defaultHidden>
+</SitePartDef>
+
+  <GenStepDef>
+    <defName>SI_ShuttleVIPGenStep</defName>
+    <linkWithSite>SI_ShuttleVIPSite</linkWithSite>
+    <order>400</order>
+    <genStep Class="SignalInterceptor.GenStep_ShuttleVIP" />
+  </GenStepDef>
+</Defs>

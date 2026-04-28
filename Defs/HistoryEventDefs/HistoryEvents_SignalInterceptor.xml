@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <HistoryEventDef>
+    <defName>SI_StashInfoShared</defName>
+    <label>stash info shared</label>
+  </HistoryEventDef>
+  <HistoryEventDef>
+    <defName>SI_StashInfoCompromised</defName>
+    <label>stash info compromised</label>
+  </HistoryEventDef>
+</Defs>

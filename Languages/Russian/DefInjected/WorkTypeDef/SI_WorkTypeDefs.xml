@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <SignalInterceptor_Scanning.label>дешифровка</SignalInterceptor_Scanning.label>
+  <SignalInterceptor_Scanning.gerundLabel>дешифровать</SignalInterceptor_Scanning.gerundLabel>
+  <SignalInterceptor_Scanning.verb>дешифровать</SignalInterceptor_Scanning.verb>
+  <SignalInterceptor_Scanning.description>Перехват и дешифровка передач фракций через консоль связи.</SignalInterceptor_Scanning.description>
+  <SignalInterceptor_Scanning.labelShort>Хакер</SignalInterceptor_Scanning.labelShort>
+</LanguageData>

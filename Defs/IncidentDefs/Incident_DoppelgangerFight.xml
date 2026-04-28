@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <IncidentDef>
+    <defName>SI_DoppelgangerFight</defName>
+    <label>First rule of doppelgangers</label>
+    <category>ThreatSmall</category>
+    <workerClass>SignalInterceptor.IncidentWorker_DoppelgangerFight</workerClass>
+    <baseChance>0</baseChance>
+    <earliestDay>5</earliestDay>
+    <minThreatPoints>0</minThreatPoints>
+    <targetTags>
+      <li>Map_PlayerHome</li>
+    </targetTags>
+    <letterLabel>First rule of doppelgangers</letterLabel>
+    <letterText>The doppelgangers have taken up arms.</letterText>
+    <letterDef>ThreatSmall</letterDef>
+  </IncidentDef>
+</Defs>

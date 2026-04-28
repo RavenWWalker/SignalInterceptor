@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+
+  <FactionDef>
+    <defName>SI_RogueMechanitorFaction</defName>
+
+    <label>rogue mechanitor signal</label>
+    <description>A temporary hostile signal-faction formed around a rogue mechanitor and their controlled mechanoids.</description>
+
+    <factionNameMaker>NamerFactionPirate</factionNameMaker>
+
+    <factionIconPath>World/WorldObjects/Sites/Beggars</factionIconPath>
+    <settlementTexturePath>World/WorldObjects/Sites/Camp</settlementTexturePath>
+
+    <colorSpectrum>
+      <li>(0.35, 0.48, 0.62)</li>
+      <li>(0.55, 0.70, 0.90)</li>
+      <li>(0.20, 0.28, 0.36)</li>
+    </colorSpectrum>
+
+    <techLevel>Ultra</techLevel>
+
+    <humanlikeFaction>true</humanlikeFaction>
+
+    <canMakeRandomly>false</canMakeRandomly>
+    <requiredCountAtGameStart>0</requiredCountAtGameStart>
+    <maxCountAtGameStart>0</maxCountAtGameStart>
+
+    <permanentEnemy>false</permanentEnemy>
+    <hidden>false</hidden>
+
+    <leaderTitle>controller</leaderTitle>
+    <leaderTitleFemale>controller</leaderTitleFemale>
+
+    <basicMemberKind>Colonist</basicMemberKind>
+
+    <pawnSingular>signal bearer</pawnSingular>
+    <pawnsPlural>signal bearers</pawnsPlural>
+
+    <pawnGroupMakers>
+      <li>
+        <kindDef>Combat</kindDef>
+        <options>
+          <Colonist>1</Colonist>
+        </options>
+      </li>
+    </pawnGroupMakers>
+
+    <backstoryCategories>
+      <li>Outlander</li>
+    </backstoryCategories>
+
+    <maxPawnCostPerTotalPointsCurve>
+      <points>
+        <li>(0, 35)</li>
+        <li>(70, 50)</li>
+        <li>(300, 75)</li>
+        <li>(700, 120)</li>
+        <li>(1300, 180)</li>
+        <li>(100000, 100000)</li>
+      </points>
+    </maxPawnCostPerTotalPointsCurve>
+
+    <raidLootValueFromPointsCurve>
+      <points>
+        <li>(0, 0)</li>
+        <li>(100, 0)</li>
+        <li>(500, 0)</li>
+        <li>(1000, 0)</li>
+        <li>(5000, 0)</li>
+      </points>
+    </raidLootValueFromPointsCurve>
+
+    <allowedArrivalTemperatureRange>-100~100</allowedArrivalTemperatureRange>
+
+  </FactionDef>
+
+</Defs>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+
+  <SitePartDef>
+    <defName>SI_MechanitorSignalSite</defName>
+    <label>mechanitor signal</label>
+    <description>A moving source of unusual mechanoid interference.</description>
+
+    <siteTexture>World/WorldObjects/Sites/Camp</siteTexture>
+    <expandingIconTexture>World/WorldObjects/Sites/Camp</expandingIconTexture>
+
+    <approachOrderString>Intercept the mechanitor signal</approachOrderString>
+    <approachingReportString>Approaching the mechanitor signal</approachingReportString>
+
+    <wantsThreatPoints>false</wantsThreatPoints>
+    <defaultHidden>false</defaultHidden>
+  </SitePartDef>
+
+</Defs>

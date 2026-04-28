@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <!-- Gizmo buttons -->
+  <SI_ScanningOn>Signal scanning: ON</SI_ScanningOn>
+  <SI_ScanningOff>Signal scanning: OFF</SI_ScanningOff>
+  <SI_ScanningOnDesc>Colonists with scanning priority will intercept faction transmissions. Click to disable.</SI_ScanningOnDesc>
+  <SI_ScanningOffDesc>Scanning is disabled. Click to enable.</SI_ScanningOffDesc>
+
+  <SI_SignalType>Signal: {0}</SI_SignalType>
+  <SI_SignalTypeDesc>Select what type of intelligence to look for.</SI_SignalTypeDesc>
+  <SI_TypeSecretStash>Stash</SI_TypeSecretStash>
+  <SI_TypeCaravanAmbush>Caravan</SI_TypeCaravanAmbush>
+  <SI_TypeKidnapVIP>VIP</SI_TypeKidnapVIP>
+
+  <SI_DevForceFind>DEV: Force find</SI_DevForceFind>
+
+  <!-- Inspect string -->
+  <SI_InspectScanning>Scanning for signals: {0}</SI_InspectScanning>
+  <SI_InspectTarget>Target: {0}</SI_InspectTarget>
+  <SI_InspectProgress>Decryption progress: {0}</SI_InspectProgress>
+  <SI_InspectIdle>Signal scanning enabled, awaiting operator.</SI_InspectIdle>
+  <SI_InspectDisabled>Signal scanning disabled.</SI_InspectDisabled>
+
+  <!-- Quest names -->
+  <SI_NameAdj_Hidden>Hidden</SI_NameAdj_Hidden>
+  <SI_NameAdj_Secret>Secret</SI_NameAdj_Secret>
+  <SI_NameAdj_Concealed>Concealed</SI_NameAdj_Concealed>
+  <SI_NameAdj_Buried>Buried</SI_NameAdj_Buried>
+  <SI_NameAdj_Forgotten>Forgotten</SI_NameAdj_Forgotten>
+  <SI_NameAdj_Abandoned>Abandoned</SI_NameAdj_Abandoned>
+  <SI_NameAdj_Remote>Remote</SI_NameAdj_Remote>
+  <SI_NameAdj_Distant>Distant</SI_NameAdj_Distant>
+  <SI_NameAdj_Covert>Covert</SI_NameAdj_Covert>
+  <SI_NameAdj_Classified>Classified</SI_NameAdj_Classified>
+
+  <SI_NameNoun_Stash>Stash</SI_NameNoun_Stash>
+  <SI_NameNoun_Cache>Cache</SI_NameNoun_Cache>
+  <SI_NameNoun_Stockpile>Stockpile</SI_NameNoun_Stockpile>
+  <SI_NameNoun_SupplyDepot>Supply Depot</SI_NameNoun_SupplyDepot>
+  <SI_NameNoun_Storehouse>Storehouse</SI_NameNoun_Storehouse>
+  <SI_NameNoun_Reserves>Reserves</SI_NameNoun_Reserves>
+  <SI_NameNoun_Trove>Trove</SI_NameNoun_Trove>
+  <SI_NameNoun_Hoard>Hoard</SI_NameNoun_Hoard>
+  <SI_NameNoun_Arsenal>Arsenal</SI_NameNoun_Arsenal>
+  <SI_NameNoun_Vault>Vault</SI_NameNoun_Vault>
+
+  <!-- Tier descriptions -->
+  <SI_TierDesc1>The cache appears to be a small forward supply point with minimal provisions and light security.</SI_TierDesc1>
+  <SI_TierDesc2>Intelligence suggests a modest supply depot with useful provisions, guarded by a small detachment.</SI_TierDesc2>
+  <SI_TierDesc3>The stash appears to be a well-stocked supply cache with valuable resources, protected by an armed guard.</SI_TierDesc3>
+  <SI_TierDesc4>Decrypted data reveals a significant stockpile of high-value equipment and materials, guarded by a well-armed force.</SI_TierDesc4>
+  <SI_TierDesc5>This appears to be a major strategic reserve containing rare and advanced equipment. Expect heavy resistance.</SI_TierDesc5>
+  <SI_TierDesc6>The intercepted transmission reveals a heavily fortified vault containing extremely valuable assets — possibly experimental technology and priceless artifacts. The garrison will be formidable.</SI_TierDesc6>
+
+  <!-- Action verb -->
+  <SI_QuestActionVerb>intercepted and decrypted a coded transmission from</SI_QuestActionVerb>
+
+  <!-- Quest descriptions ({0} = "Name intercepted ... from", {1} = colored faction, {2} = tier desc) -->
+  <SI_QuestDescFriendly>{0} has intercepted and decrypted a coded transmission from {1}, revealing the location of a hidden supply cache. {2}\n\nRaiding this stash would be an act of aggression — {1} will not take kindly to having their supplies stolen.\n\nAlternatively, you could let this information go unused. Keeping their secret safe may improve your standing with {1}.\n\nThe cache will be relocated once they realize their communications were compromised.</SI_QuestDescFriendly>
+  <SI_QuestDescHostile>{0} has intercepted and decrypted a coded transmission from {1}, revealing the location of a hidden supply cache. {2}\n\nSince {1} is already hostile, there is nothing to lose. Strike fast — the cache will be relocated soon.</SI_QuestDescHostile>
+
+  <!-- Site names -->
+  <SI_SiteName1>Faction stash</SI_SiteName1>
+  <SI_SiteName2>Secret cache</SI_SiteName2>
+  <SI_SiteName3>Hidden warehouse</SI_SiteName3>
+  <SI_SiteName4>Disguised storage</SI_SiteName4>
+  <SI_SiteName5>Hidden arsenal</SI_SiteName5>
+  <SI_SiteName6>Underground depot</SI_SiteName6>
+  <SI_SiteName7>Mothballed base</SI_SiteName7>
+  <SI_SiteName8>Hidden bunker</SI_SiteName8>
+
+  <!-- Letters -->
+  <SI_LetterSecretKept>Secret kept</SI_LetterSecretKept>
+  <SI_LetterSecretKeptText>The quest to raid {0}'s cache has expired. By keeping their secret, your relations have improved by {1}.</SI_LetterSecretKeptText>
+
+  <!-- Signal found -->
+  <SI_SignalFound>Signal intercepted</SI_SignalFound>
+  <SI_SignalFoundText>{0} has successfully intercepted and decrypted an enemy transmission!</SI_SignalFoundText>
+
+    <!-- Faction dialog -->
+  <SI_DialogReportStash>Report a discovered enemy stash</SI_DialogReportStash>
+  <SI_DialogStashEntry>Stash of {0} (Tier: {1})</SI_DialogStashEntry>
+  <SI_TierLabel1>Minor</SI_TierLabel1>
+  <SI_TierLabel2>Modest</SI_TierLabel2>
+  <SI_TierLabel3>Significant</SI_TierLabel3>
+  <SI_TierLabel4>Major</SI_TierLabel4>
+  <SI_TierLabel5>Strategic</SI_TierLabel5>
+  <SI_TierLabel6>Legendary</SI_TierLabel6>
+  <SI_LetterStashReported>Stash reported</SI_LetterStashReported>
+  <SI_LetterStashReportedText>You shared intelligence about a hidden stash belonging to {1} with allies from {0}. Your relations with {0} improved by {2}. In gratitude for your help, they are sharing some of their resources with you.</SI_LetterStashReportedText>
+  <SI_LetterStashReportedTextCaravan>You shared intelligence about a hidden stash belonging to {1} with allies from {0}. Your relations with {0} improved by {2}.</SI_LetterStashReportedTextCaravan>
+  <SI_LetterCounterIntelTitle>Counter-intelligence</SI_LetterCounterIntelTitle>
+  <SI_LetterCounterIntel>The faction {0} intercepted your negotiations and learned that you shared the coordinates of their secret cache with another faction. They are preparing a retaliatory strike and will soon arrive at your settlement.</SI_LetterCounterIntel>
+
+  <SI_DialogStashListHeader>You have intelligence about enemy supply caches that may interest {0}. Which one would you like to report?</SI_DialogStashListHeader>
+  <SI_DialogStashConfirm>Report the {1}-level stash belonging to {0}?\n\nYour relations with {3} will improve by approximately {2}.\nRelations with {0} may worsen if they find out.\n\nThe stash location will be removed from your map.</SI_DialogStashConfirm>
+  <SI_DialogConfirmYes>Yes, share the intelligence</SI_DialogConfirmYes>
+  <SI_DialogConfirmNo>No, go back</SI_DialogConfirmNo>
+  <SI_DialogBack>Back</SI_DialogBack>
+
+  <SI_LetterTribalTraderTitle>Trade caravan sent</SI_LetterTribalTraderTitle>
+  <SI_LetterTribalTraderText>In gratitude for the intelligence, {0} is sending a trade caravan to your settlement. It should arrive within a day or two.</SI_LetterTribalTraderText>
+  <SI_LetterSlaveTitle>Slave sent</SI_LetterSlaveTitle>
+  <SI_LetterSlaveText>As a token of gratitude, {0} is sending a slave to your settlement. They should arrive within a day or two.</SI_LetterSlaveText>
+  <SI_LetterSlaveArrivedTitle>Slave arrived</SI_LetterSlaveArrivedTitle>
+  <SI_LetterSlaveArrivedText>{0} has arrived at your settlement as a gift. You may do with this slave as you wish — no faction will hold it against you. {0} hopes to start a new life here.</SI_LetterSlaveArrivedText>
+
+  <SI_DialogChooseCaravan>{0} is grateful and offers to send a trade caravan as a reward. What kind of traders would you prefer?</SI_DialogChooseCaravan>
+  <SI_Trader_Caravan_Neolithic_BulkGoods>Bulk goods trader</SI_Trader_Caravan_Neolithic_BulkGoods>
+  <SI_Trader_Caravan_Neolithic_WarMerchant>War merchant</SI_Trader_Caravan_Neolithic_WarMerchant>
+  <SI_Trader_Caravan_Neolithic_ShamanMerchant>Shaman merchant</SI_Trader_Caravan_Neolithic_ShamanMerchant>
+  <SI_Trader_Caravan_Neolithic_Slaver>Slaver</SI_Trader_Caravan_Neolithic_Slaver>
+
+  <!-- Job descriptions -->
+  <SI_JobReportFull>Decrypting signals at {0}</SI_JobReportFull>
+  <SI_JobGerund>decrypt signals at </SI_JobGerund>
+
+  <!-- VIP Quest Names -->
+  <SI_VIP_Name_Shuttle>Grounded Shuttle</SI_VIP_Name_Shuttle>
+  <SI_VIP_Name_Psycaster>Anomalous Signal</SI_VIP_Name_Psycaster>
+  <SI_VIP_Name_Mechanitor>Mechanoid Anomaly</SI_VIP_Name_Mechanitor>
+  <SI_VIP_Name_Pilgrim>Season of Pilgrimage</SI_VIP_Name_Pilgrim>
+  <SI_VIP_Name_Doppelganger>Crowd of Doubles</SI_VIP_Name_Doppelganger>
+
+  <!-- VIP Site Labels -->
+  <SI_VIP_Site_Shuttle>Shuttle landing pad</SI_VIP_Site_Shuttle>
+  <SI_VIP_Site_Psycaster>Anomalous signal source</SI_VIP_Site_Psycaster>
+  <SI_VIP_Site_Mechanitor>Mechanoid signal source</SI_VIP_Site_Mechanitor>
+  <SI_VIP_Site_Pilgrim>Pilgrim campsite</SI_VIP_Site_Pilgrim>
+  <SI_VIP_Site_Doppelganger>Doppelganger camp</SI_VIP_Site_Doppelganger>
+
+  <!-- VIP Quest Descriptions -->
+  <SI_VIP_Desc_Shuttle>{0} intercepted a conversation between two shuttle pilots. They discussed a high-value individual sent by {1} who was forced to make an emergency landing due to fuel shortage. The shuttle is parked at a landing pad, awaiting fuel delivery. The VIP is guarded by an armed escort.\n\nYou can raid the landing pad to capture the VIP as a slave. Be warned — this will make {1} hostile if they aren't already.\n\nThe shuttle will depart once fuel arrives.</SI_VIP_Desc_Shuttle>
+  <SI_VIP_Desc_Psycaster>{0} intercepted a strange signal signature through the comms console. The source is constantly moving and its wavelength is unstable. Triangulation revealed an approximate location, but the trail will soon go cold.\n\nInvestigation may reveal a powerful psycaster. Approach with extreme caution.</SI_VIP_Desc_Psycaster>
+  <SI_VIP_Desc_Mechanitor>{0} detected an unusual pattern in mechanoid radio chatter — something almost... human. The source is surrounded by mechanoids and constantly moving. Act fast before the signal is lost.\n\nExpect heavy mechanoid resistance.</SI_VIP_Desc_Mechanitor>
+  <SI_VIP_Desc_Pilgrim>{0} intercepted chatter about {1}'s pilgrimage season. A particularly capable pilgrim carrying a sacred relic has stopped to rest. The pilgrim is accompanied by tamed beasts.\n\nCapturing or killing the pilgrim will make {1} hostile.</SI_VIP_Desc_Pilgrim>
+  <SI_VIP_Desc_Doppelganger>{0} overheard two settlers discussing a crowd of identical, heavily armed strangers heading in an unknown direction. Their exact coordinates were mentioned in a military briefing. The doppelgangers have made camp, but they will move on soon.\n\nExpect fierce resistance from 10-12 identical combatants.</SI_VIP_Desc_Doppelganger>
+
+  <SI_Doppelganger_Title>Doppelganger convoy</SI_Doppelganger_Title>
+  <SI_Doppelganger_Text>Intercepted coordinates reveal a convoy of {0} identical armed combatants from {1}. They all look exactly alike — clones of the same person. Their bodies are unstable and fragile, but they are numerous and well-armed.</SI_Doppelganger_Text>
+
+  <SI_VIP_SpottedTitle>VIP spotted</SI_VIP_SpottedTitle>
+  <SI_VIP_SpottedText>You have spotted the VIP target: {0}. They appear to be affiliated with {1}. The VIP is wearing distinctive clothing and is equipped with a personal shield.\n\nCapture them alive for maximum benefit.</SI_VIP_SpottedText>
+  
+  <SI_VIP_SuccessTitle>Threat eliminated</SI_VIP_SuccessTitle>
+  <SI_VIP_SuccessText>You have successfully cleared the enemy camp. {0} learned of your victory and improved relations with you by {1} as a sign of respect.</SI_VIP_SuccessText>
+
+  <SI_DoppelgangerFight_Title>First rule of doppelgangers</SI_DoppelgangerFight_Title>
+  <SI_DoppelgangerFight_Text>The doppelgangers of {0} have taken up arms to kill their twins and become the only one of their kind. They keep whispering: "The first rule of doppelgangers is to kill all your doppelgangers at the first opportunity."</SI_DoppelgangerFight_Text>
+
+  <SI_TheOriginal_Title>The Original</SI_TheOriginal_Title>
+  <SI_TheOriginal_Text>{0} — the last surviving doppelganger — has gained the trait "The Original", marking the end of their struggle against themselves. {0} is now filled with confidence that tomorrow will be better than yesterday, for only the original remains. Or do they..? Regardless, {0} will now enjoy a permanent mood boost.</SI_TheOriginal_Text>
+
+  <SI_Doppelganger_FactionName>Anomalous doppelgangers</SI_Doppelganger_FactionName>
+
+  <SI_Doppelganger_NameAdjectives>Faceless|Mirrored|Distorted|Reflected|Impossible|Replaced</SI_Doppelganger_NameAdjectives>
+  <SI_Doppelganger_NameNouns>Echoes|Shadows|Imprints|Visages|Mirages|Reflections</SI_Doppelganger_NameNouns>
+
+  <SI_Doppelganger_QuestNouns>Parade|Choir|Host|Procession|Carnival|March|Convention|Gathering|Circle|Swarm|Legion|Squad|Call</SI_Doppelganger_QuestNouns>
+  <SI_Doppelganger_QuestAdjectives>of the Sorrowful|of the Faceless|of the Replaced|of the Reflected|of the Distorted|of the Impossible|of the Forgotten|of the Hollow|of the Identical|of the False|of the Erased|of the Divided|of the Unreal</SI_Doppelganger_QuestAdjectives>
+
+  <SI_MechanitorSignal_QuestNouns>Protocol|Signal|Circuit|Impulse|Whisper|Pulse|Code|Resonance|Response|Route|Trace|Node</SI_MechanitorSignal_QuestNouns>
+  <SI_MechanitorSignal_QuestAdjectives>of the Wandering Core|of Iron Will|of the Alien Mind|of the Dead Machine|of the Lost Mechanitor|of Broken Control|of the Steel Heart|of the Ashen Signal|of the Lone Commander|of the Cold Consciousness|of the Motionless Soul|of the Forgotten Command</SI_MechanitorSignal_QuestAdjectives>
+
+  <SI_VIP_Site_MechanitorSignal>mechanitor signal interception</SI_VIP_Site_MechanitorSignal>
+
+  <SI_VIP_Desc_MechanitorSignal>The entire radio spectrum is clogged with interference from mechanoid activity, but {0} managed to detect strange traces within its structure... something almost human. There is no reliable information about the source of the signal, but one thing is clear: it is surrounded by numerous mechanoids and constantly moving away. If you want to intercept it, you must act quickly.</SI_VIP_Desc_MechanitorSignal>
+
+  <SI_MechanitorSignal_Title>Mechanitor signal intercepted</SI_MechanitorSignal_Title>
+  <SI_MechanitorSignal_Text>The signal source has been located. At the center of the interference stands an aggressive mechanitor named {0}. Active mechanoids surround them, already switching into combat mode.</SI_MechanitorSignal_Text>
+
+  <SI_MechanitorSignal_FactionNouns>Protocol|Circuit|Signal|Impulse|Node|Code</SI_MechanitorSignal_FactionNouns>
+  <SI_MechanitorSignal_FactionAdjectives>of the Wandering Core|of Iron Will|of the Alien Mind|of Broken Control|of the Steel Heart|of the Forgotten Command</SI_MechanitorSignal_FactionAdjectives>
+
+  <SI_VIP_CompletedTitle>Quest completed</SI_VIP_CompletedTitle>
+  <SI_VIP_CompletedText>The threats at the site have been eliminated. The signal is no longer dangerous.</SI_VIP_CompletedText>
+
+  <SI_VIP_FailedTitle>Quest failed</SI_VIP_FailedTitle>
+  <SI_VIP_FailedText>You failed to complete the mission. The signal source has been lost.</SI_VIP_FailedText>
+  <SI_VIP_FailedExpiredText>You waited too long. The signal source has faded from the airwaves and can no longer be tracked.</SI_VIP_FailedExpiredText>
+
+  <SI_MechanitorSignal_CompletedText>The hostile mechanitor node has been suppressed. The mechanoids no longer answer the outgoing signal, and the battlefield slowly falls silent.</SI_MechanitorSignal_CompletedText>
+  <SI_MechanitorSignal_FailedFledText>You left the interception zone without suppressing the signal source. The mechanitor has moved on with his swarm, and the trail is lost.</SI_MechanitorSignal_FailedFledText>
+
+</LanguageData>

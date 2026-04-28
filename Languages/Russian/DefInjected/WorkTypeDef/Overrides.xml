@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+  <DarkStudy.labelShort>Оккультист</DarkStudy.labelShort>
+  <Fishing.labelShort>Рыбак</Fishing.labelShort>
+  <DarkStudy.label>оккультизм</DarkStudy.label>
+  <Fishing.label>рыболовство</Fishing.label>
+  <Fishing.verb>рыбачить</Fishing.verb>
+  <Fishing.gerundLabel>рыбачить</Fishing.gerundLabel>
+  <Fishing.description>Ловля рыбы в рыболовных зонах.</Fishing.description>
+</LanguageData>
+

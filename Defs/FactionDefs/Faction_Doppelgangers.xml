@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+
+  <FactionDef Name="SI_DoppelgangerFactionBase" Abstract="True">
+    <label>anomalous doppelgangers</label>
+    <description>Not so much a faction as a temporary cluster of identical people formed around a distorted signal. They do not negotiate, establish settlements, or recognize authority. Each group exists only briefly: it appears near the source of an anomaly, defends it with disturbing coordination, and vanishes once the signal collapses or its copies are destroyed. Their origin is unknown, but one thing is clear — they are not ordinary raiders, but living replicas assembled by an unknown process for a single purpose.</description>
+
+    <factionNameMaker>NamerFactionPirate</factionNameMaker>
+
+    <!-- Иконка фракции. Если хочешь песочные часы — оставь Beggars. -->
+    <factionIconPath>World/WorldObjects/Sites/Beggars</factionIconPath>
+
+    <!-- Иконка поселения на случай старого сейва/аварийного Settlement -->
+    <settlementTexturePath>World/WorldObjects/Sites/Camp</settlementTexturePath>
+
+    <colorSpectrum>
+      <li>(0.82, 0.74, 0.58)</li>
+      <li>(0.55, 0.50, 0.42)</li>
+      <li>(0.95, 0.87, 0.70)</li>
+    </colorSpectrum>
+
+    <techLevel>Industrial</techLevel>
+
+    <humanlikeFaction>true</humanlikeFaction>
+
+    <canMakeRandomly>false</canMakeRandomly>
+    <requiredCountAtGameStart>0</requiredCountAtGameStart>
+    <maxCountAtGameStart>0</maxCountAtGameStart>
+
+    <permanentEnemy>false</permanentEnemy>
+    <hidden>false</hidden>
+
+    <leaderTitle>leader</leaderTitle>
+    <leaderTitleFemale>leader</leaderTitleFemale>
+
+    <basicMemberKind>Colonist</basicMemberKind>
+
+    <pawnSingular>doppelganger</pawnSingular>
+    <pawnsPlural>doppelgangers</pawnsPlural>
+
+    <pawnGroupMakers>
+      <li>
+        <kindDef>Combat</kindDef>
+        <options>
+          <Colonist>1</Colonist>
+        </options>
+      </li>
+    </pawnGroupMakers>
+
+    <backstoryCategories>
+      <li>Outlander</li>
+    </backstoryCategories>
+
+    <maxPawnCostPerTotalPointsCurve>
+      <points>
+        <li>(0, 35)</li>
+        <li>(70, 50)</li>
+        <li>(300, 75)</li>
+        <li>(700, 120)</li>
+        <li>(1300, 180)</li>
+        <li>(100000, 100000)</li>
+      </points>
+    </maxPawnCostPerTotalPointsCurve>
+
+    <raidLootValueFromPointsCurve>
+      <points>
+        <li>(0, 0)</li>
+        <li>(100, 0)</li>
+        <li>(500, 0)</li>
+        <li>(1000, 0)</li>
+        <li>(5000, 0)</li>
+      </points>
+    </raidLootValueFromPointsCurve>
+
+    <allowedArrivalTemperatureRange>-100~100</allowedArrivalTemperatureRange>
+  </FactionDef>
+
+
+  <!-- Fallback без Biotech / без выбранного ксенотипа -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase">
+    <defName>SI_DoppelgangerFaction</defName>
+  </FactionDef>
+
+
+  <!-- Baseliner -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Baseliner</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Baseliner>1</Baseliner>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Hussar -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Hussar</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Hussar>1</Hussar>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Pigskin -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Pigskin</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Pigskin>1</Pigskin>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Impid -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Impid</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Impid>1</Impid>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Yttakin -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Yttakin</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Yttakin>1</Yttakin>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Waster -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Waster</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Waster>1</Waster>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Dirtmole -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Dirtmole</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Dirtmole>1</Dirtmole>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Neanderthal -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech">
+    <defName>SI_DoppelgangerFaction_Neanderthal</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Neanderthal>1</Neanderthal>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+
+  <!-- Starjack: только Biotech + Odyssey -->
+  <FactionDef ParentName="SI_DoppelgangerFactionBase" MayRequire="Ludeon.RimWorld.Biotech,Ludeon.RimWorld.Odyssey">
+    <defName>SI_DoppelgangerFaction_Starjack</defName>
+    <xenotypeSet>
+      <xenotypeChances>
+        <Starjack>1</Starjack>
+      </xenotypeChances>
+    </xenotypeSet>
+  </FactionDef>
+
+</Defs>

@@ -1,0 +1,24 @@
+# Visual Studio / Rider / IDE
+.vs/
+**/.vs/
+.idea/
+*.user
+*.suo
+*.csproj.user
+
+# Build folders
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+
+# Debug files
+*.pdb
+*.mdb
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

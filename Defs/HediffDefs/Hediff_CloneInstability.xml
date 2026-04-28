@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <HediffDef>
+    <defName>SI_CloneInstability</defName>
+    <label>cellular instability</label>
+    <description>This clone's body is genetically unstable, making it extremely vulnerable to damage.</description>
+    <hediffClass>HediffWithComps</hediffClass>
+    <defaultLabelColor>(0.8, 0.4, 0.4)</defaultLabelColor>
+    <isBad>true</isBad>
+    <tendable>false</tendable>
+    <makesAlert>false</makesAlert>
+    <initialSeverity>1.0</initialSeverity>
+    <stages>
+      <li>
+        <statFactors>
+        <IncomingDamageFactor>3.0</IncomingDamageFactor>
+        </statFactors>
+      </li>
+    </stages>
+  </HediffDef>
+
+  <HediffDef>
+      <defName>SI_CloneBleedRate</defName>
+      <label>hemorrhagic</label>
+      <description>This clone's blood does not coagulate properly, causing rapid blood loss from any wound.\n\nBlood loss rate: x300%</description>
+      <hediffClass>HediffWithComps</hediffClass>
+      <defaultLabelColor>(0.7, 0.2, 0.2)</defaultLabelColor>
+      <isBad>true</isBad>
+      <tendable>false</tendable>
+      <makesAlert>false</makesAlert>
+      <initialSeverity>1.0</initialSeverity>
+  </HediffDef>
+</Defs>

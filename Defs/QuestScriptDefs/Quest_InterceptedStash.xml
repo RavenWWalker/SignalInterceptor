@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <QuestScriptDef>
+    <defName>Quest_InterceptedStash</defName>
+    <rootSelectionWeight>0</rootSelectionWeight>
+    <isRootSpecial>true</isRootSpecial>
+    <root Class="SignalInterceptor.QuestNode_Root_InterceptedStash" />
+  </QuestScriptDef>
+</Defs>

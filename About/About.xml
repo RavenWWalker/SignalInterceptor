@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>Signal Interceptor</name>
+  <author>RavenWWalker</author>
+  <packageId>ravenwwalker.signalinterceptor</packageId>
+  <supportedVersions>
+    <li>1.6</li>
+  </supportedVersions>
+  <description>Intercept and decrypt faction communications to uncover secret stashes, caravan routes, and high-value targets. Build a Signal Interceptor and assign a researcher to decode enemy transmissions.
+
+Перехватывайте и дешифруйте передачи фракций, чтобы находить секретные тайники, маршруты караванов и ценных пленников. Назначьте исследователя на консоль связи для перехвата вражеских передач.</description>
+<modDependencies>
+    <li>
+      <packageId>brrainz.harmony</packageId>
+      <displayName>Harmony</displayName>
+      <steamWorkshopUrl>steam://url/CommunityFilePage/2009463077</steamWorkshopUrl>
+      <downloadUrl>https://github.com/pardeike/HarmonyRimWorld/releases/latest</downloadUrl>
+    </li>
+  </modDependencies>
+
+  <loadAfter>
+    <li>brrainz.harmony</li>
+  </loadAfter>
+</ModMetaData>

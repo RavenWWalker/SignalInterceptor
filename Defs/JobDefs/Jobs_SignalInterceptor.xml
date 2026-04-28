@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <JobDef>
+    <defName>SignalInterceptor_ScanSignals</defName>
+    <driverClass>SignalInterceptor.JobDriver_ScanSignals</driverClass>
+    <reportString>decrypting signals</reportString>
+    <allowOpportunisticPrefix>false</allowOpportunisticPrefix>
+    <suspendable>true</suspendable>
+  </JobDef>
+</Defs>

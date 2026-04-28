@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LanguageData>
+
+  <SI_DoppelgangerFaction.label>аномальные двойники</SI_DoppelgangerFaction.label>
+  <SI_DoppelgangerFaction.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction.description>
+  <SI_DoppelgangerFaction.pawnSingular>двойник</SI_DoppelgangerFaction.pawnSingular>
+  <SI_DoppelgangerFaction.pawnsPlural>двойники</SI_DoppelgangerFaction.pawnsPlural>
+  <SI_DoppelgangerFaction.leaderTitle>лидер</SI_DoppelgangerFaction.leaderTitle>
+  <SI_DoppelgangerFaction.leaderTitleFemale>лидер</SI_DoppelgangerFaction.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Baseliner.label>аномальные двойники</SI_DoppelgangerFaction_Baseliner.label>
+  <SI_DoppelgangerFaction_Baseliner.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Baseliner.description>
+  <SI_DoppelgangerFaction_Baseliner.pawnSingular>двойник</SI_DoppelgangerFaction_Baseliner.pawnSingular>
+  <SI_DoppelgangerFaction_Baseliner.pawnsPlural>двойники</SI_DoppelgangerFaction_Baseliner.pawnsPlural>
+  <SI_DoppelgangerFaction_Baseliner.leaderTitle>лидер</SI_DoppelgangerFaction_Baseliner.leaderTitle>
+  <SI_DoppelgangerFaction_Baseliner.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Baseliner.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Hussar.label>аномальные двойники</SI_DoppelgangerFaction_Hussar.label>
+  <SI_DoppelgangerFaction_Hussar.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Hussar.description>
+  <SI_DoppelgangerFaction_Hussar.pawnSingular>двойник</SI_DoppelgangerFaction_Hussar.pawnSingular>
+  <SI_DoppelgangerFaction_Hussar.pawnsPlural>двойники</SI_DoppelgangerFaction_Hussar.pawnsPlural>
+  <SI_DoppelgangerFaction_Hussar.leaderTitle>лидер</SI_DoppelgangerFaction_Hussar.leaderTitle>
+  <SI_DoppelgangerFaction_Hussar.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Hussar.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Pigskin.label>аномальные двойники</SI_DoppelgangerFaction_Pigskin.label>
+  <SI_DoppelgangerFaction_Pigskin.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Pigskin.description>
+  <SI_DoppelgangerFaction_Pigskin.pawnSingular>двойник</SI_DoppelgangerFaction_Pigskin.pawnSingular>
+  <SI_DoppelgangerFaction_Pigskin.pawnsPlural>двойники</SI_DoppelgangerFaction_Pigskin.pawnsPlural>
+  <SI_DoppelgangerFaction_Pigskin.leaderTitle>лидер</SI_DoppelgangerFaction_Pigskin.leaderTitle>
+  <SI_DoppelgangerFaction_Pigskin.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Pigskin.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Impid.label>аномальные двойники</SI_DoppelgangerFaction_Impid.label>
+  <SI_DoppelgangerFaction_Impid.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Impid.description>
+  <SI_DoppelgangerFaction_Impid.pawnSingular>двойник</SI_DoppelgangerFaction_Impid.pawnSingular>
+  <SI_DoppelgangerFaction_Impid.pawnsPlural>двойники</SI_DoppelgangerFaction_Impid.pawnsPlural>
+  <SI_DoppelgangerFaction_Impid.leaderTitle>лидер</SI_DoppelgangerFaction_Impid.leaderTitle>
+  <SI_DoppelgangerFaction_Impid.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Impid.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Yttakin.label>аномальные двойники</SI_DoppelgangerFaction_Yttakin.label>
+  <SI_DoppelgangerFaction_Yttakin.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Yttakin.description>
+  <SI_DoppelgangerFaction_Yttakin.pawnSingular>двойник</SI_DoppelgangerFaction_Yttakin.pawnSingular>
+  <SI_DoppelgangerFaction_Yttakin.pawnsPlural>двойники</SI_DoppelgangerFaction_Yttakin.pawnsPlural>
+  <SI_DoppelgangerFaction_Yttakin.leaderTitle>лидер</SI_DoppelgangerFaction_Yttakin.leaderTitle>
+  <SI_DoppelgangerFaction_Yttakin.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Yttakin.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Waster.label>аномальные двойники</SI_DoppelgangerFaction_Waster.label>
+  <SI_DoppelgangerFaction_Waster.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Waster.description>
+  <SI_DoppelgangerFaction_Waster.pawnSingular>двойник</SI_DoppelgangerFaction_Waster.pawnSingular>
+  <SI_DoppelgangerFaction_Waster.pawnsPlural>двойники</SI_DoppelgangerFaction_Waster.pawnsPlural>
+  <SI_DoppelgangerFaction_Waster.leaderTitle>лидер</SI_DoppelgangerFaction_Waster.leaderTitle>
+  <SI_DoppelgangerFaction_Waster.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Waster.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Dirtmole.label>аномальные двойники</SI_DoppelgangerFaction_Dirtmole.label>
+  <SI_DoppelgangerFaction_Dirtmole.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Dirtmole.description>
+  <SI_DoppelgangerFaction_Dirtmole.pawnSingular>двойник</SI_DoppelgangerFaction_Dirtmole.pawnSingular>
+  <SI_DoppelgangerFaction_Dirtmole.pawnsPlural>двойники</SI_DoppelgangerFaction_Dirtmole.pawnsPlural>
+  <SI_DoppelgangerFaction_Dirtmole.leaderTitle>лидер</SI_DoppelgangerFaction_Dirtmole.leaderTitle>
+  <SI_DoppelgangerFaction_Dirtmole.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Dirtmole.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Neanderthal.label>аномальные двойники</SI_DoppelgangerFaction_Neanderthal.label>
+  <SI_DoppelgangerFaction_Neanderthal.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Neanderthal.description>
+  <SI_DoppelgangerFaction_Neanderthal.pawnSingular>двойник</SI_DoppelgangerFaction_Neanderthal.pawnSingular>
+  <SI_DoppelgangerFaction_Neanderthal.pawnsPlural>двойники</SI_DoppelgangerFaction_Neanderthal.pawnsPlural>
+  <SI_DoppelgangerFaction_Neanderthal.leaderTitle>лидер</SI_DoppelgangerFaction_Neanderthal.leaderTitle>
+  <SI_DoppelgangerFaction_Neanderthal.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Neanderthal.leaderTitleFemale>
+
+
+  <SI_DoppelgangerFaction_Starjack.label>аномальные двойники</SI_DoppelgangerFaction_Starjack.label>
+  <SI_DoppelgangerFaction_Starjack.description>Не столько фракция, сколько временное скопление одинаковых людей, возникшее вокруг одного искажённого сигнала. Они не ведут переговоров, не основывают поселений и не признают никакой власти. Каждый такой отряд существует недолго: появляется рядом с источником аномалии, защищает его с пугающей согласованностью, а после уничтожения или распада сигнала исчезает так же внезапно, как появился. Их происхождение неизвестно, но очевидно одно — это не обычные рейдеры, а живые копии, собранные неизвестным процессом для одной конкретной цели.</SI_DoppelgangerFaction_Starjack.description>
+  <SI_DoppelgangerFaction_Starjack.pawnSingular>двойник</SI_DoppelgangerFaction_Starjack.pawnSingular>
+  <SI_DoppelgangerFaction_Starjack.pawnsPlural>двойники</SI_DoppelgangerFaction_Starjack.pawnsPlural>
+  <SI_DoppelgangerFaction_Starjack.leaderTitle>лидер</SI_DoppelgangerFaction_Starjack.leaderTitle>
+  <SI_DoppelgangerFaction_Starjack.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Starjack.leaderTitleFemale>
+
+<SI_RogueMechanitorFaction.label>заблудший механитор</SI_RogueMechanitorFaction.label>
+
+<SI_RogueMechanitorFaction.description>Одинокий механитор, долгое время существующий вдали от поселений и известных маршрутов. Его присутствие выдаёт не голос, не имя и не просьба о помощи, а искажённый поток команд, заполняющий радиоэфир помехами и обрывками почти человеческих интонаций. 
+Никто не знает, кем он был раньше: изгнанником, выжившим после катастрофы, беглым исследователем или тем, кто слишком долго слушал машины и однажды начал отвечать им на их языке. Его тело усилено имплантами механитора, а вокруг него движется группа боевых механоидов, подчиняющихся не приказам фракции, а личной сети контроля.
+Такие механиторы редко не вступают в переговоры. Они постоянно перемещаются, избегают длительных стоянок и реагируют на приближение чужаков как на угрозу. Возможно, в нём ещё осталась человеческая воля, и именно она делает его опаснее обычного механоидного узла.</SI_RogueMechanitorFaction.description>
+
+<SI_RogueMechanitorFaction.pawnSingular>механитор</SI_RogueMechanitorFaction.pawnSingular>
+<SI_RogueMechanitorFaction.pawnsPlural>механиторы</SI_RogueMechanitorFaction.pawnsPlural>
+
+<SI_RogueMechanitorFaction.leaderTitle>механитор</SI_RogueMechanitorFaction.leaderTitle>
+<SI_RogueMechanitorFaction.leaderTitleFemale>механитор</SI_RogueMechanitorFaction.leaderTitleFemale>
+
+
+
+</LanguageData>

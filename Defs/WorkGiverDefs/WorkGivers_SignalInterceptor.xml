@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <WorkGiverDef>
+    <defName>SignalInterceptor_ScanAtConsole</defName>
+    <label>scan for signals at comms console</label>
+    <giverClass>SignalInterceptor.WorkGiver_ScanSignals</giverClass>
+    <workType>SignalInterceptor_Scanning</workType>
+    <verb>scan for signals</verb>
+    <gerund>scanning for signals at</gerund>
+    <priorityInType>100</priorityInType>
+  </WorkGiverDef>
+</Defs>

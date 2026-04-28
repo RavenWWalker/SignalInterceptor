@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <TraitDef>
+    <defName>SI_TheOriginal</defName>
+    <commonality>0</commonality>
+    <degreeDatas>
+      <li>
+        <label>original</label>
+        <description>This pawn eliminated all of their doppelgangers and proved they are the one and only. The knowledge fills them with hope for a brighter future.\n\nMood +12</description>
+        <degree>0</degree>
+      </li>
+    </degreeDatas>
+  </TraitDef>
+
+  <ThoughtDef>
+    <defName>SI_TheOriginalMood</defName>
+    <workerClass>SignalInterceptor.ThoughtWorker_TheOriginal</workerClass>
+    <validWhileDespawned>true</validWhileDespawned>
+    <stages>
+      <li>
+        <label>I am the original</label>
+        <description>They envied me, they copied me, but I silenced them all. Now I can live a happy life knowing that no one will ever try to replicate me again.</description>
+        <baseMoodEffect>12</baseMoodEffect>
+      </li>
+    </stages>
+  </ThoughtDef>
+</Defs>
