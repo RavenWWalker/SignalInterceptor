@@ -54,17 +54,28 @@ namespace SignalInterceptor
 
             VIPSubtype subtype = ChooseSubtype(realFaction);
 
+            Settlement shuttleOrigin = null;
+            Settlement shuttleDestination = null;
+
             PlanetTile tile;
-            if (!TileFinder.TryFindNewSiteTile(out tile, minDist: 16, maxDist: 36))
-                return;
+
+            if (subtype == VIPSubtype.ShuttleVIP)
+            {
+                if (!TryFindShuttleRouteTile(map, realFaction, out tile, out shuttleOrigin, out shuttleDestination))
+                {
+                    if (!TileFinder.TryFindNewSiteTile(out tile, minDist: 16, maxDist: 36))
+                        return;
+                }
+            }
+            else
+            {
+                if (!TileFinder.TryFindNewSiteTile(out tile, minDist: 16, maxDist: 36))
+                    return;
+            }
 
             float threatPoints = GetThreatPoints(subtype, realFaction);
             SitePartDef vipPartDef = GetSitePartDef(subtype);
 
-            /*
-             * Для DoppelgangerVIP фракцию НЕ создаём здесь.
-             * Она создаётся только при генерации карты сайта в SpawnDoppelgangerVIP().
-             */
             Faction siteFaction =
                 subtype == VIPSubtype.DoppelgangerVIP ||
                 subtype == VIPSubtype.MechanitorSignalVIP
@@ -90,20 +101,16 @@ namespace SignalInterceptor
             string workerName = worker?.LabelShort ?? "A colonist";
             string coloredFaction = FactionColored(realFaction);
 
-            /*
-             * ВАЖНО:
-             * Название генерируется один раз.
-             * Для двойников это будет что-то вроде:
-             * "Парад Опечаленных", "Рой Безликих", "Марш Подменённых".
-             */
+            string originName = shuttleOrigin != null
+                ? shuttleOrigin.LabelCap.ToString()
+                : "неизвестного поселения";
+
+            string destinationName = shuttleDestination != null
+                ? shuttleDestination.LabelCap.ToString()
+                : "другого поселения";
+
             string questName = GetQuestName(subtype);
 
-            /*
-             * ВАЖНО:
-             * Для DoppelgangerVIP метка сайта получает ТО ЖЕ название, что и квест.
-             * Именно это меняет верхнюю строку на глобальной карте,
-             * которую ты выделил красным на скрине.
-             */
             if (subtype == VIPSubtype.DoppelgangerVIP ||
                 subtype == VIPSubtype.MechanitorSignalVIP)
             {
@@ -114,25 +121,37 @@ namespace SignalInterceptor
                 site.customLabel = GetSiteLabel(subtype);
             }
 
-            string questDescription = GetQuestDescription(subtype, workerName, coloredFaction);
+            string questDescription = GetQuestDescription(
+                subtype,
+                workerName,
+                coloredFaction,
+                originName,
+                destinationName
+            );
 
             List<Rule> nameRules = new List<Rule>
-    {
-        new Rule_String("questName", questName)
-    };
+            {
+                new Rule_String("questName", questName)
+            };
             QuestGen.AddQuestNameRules(nameRules);
 
             List<Rule> descRules = new List<Rule>
-    {
-        new Rule_String("questDescription", questDescription)
-    };
+            {
+                new Rule_String("questDescription", questDescription)
+            };
             QuestGen.AddQuestDescriptionRules(descRules);
 
             string questTag = QuestGenUtility.HardcodedTargetQuestTagWithQuestID("InterceptedVIP");
             QuestUtility.AddQuestTag(ref site.questTags, questTag);
 
             quest.SpawnWorldObject(site);
-            quest.WorldObjectTimeout(site, timeoutTicks);
+
+            /*
+             * ВАЖНО:
+             * Не используем quest.WorldObjectTimeout(site, timeoutTicks),
+             * чтобы сайт не схлопнулся, если игрок уже вошёл на карту.
+             * Истечение срока контролируется SignalInterceptorGameComponent.
+             */
 
             string allEnemiesDefeatedSignal = QuestGenUtility.QuestTagSignal(questTag, "AllEnemiesDefeated");
             quest.SignalPass(delegate
@@ -176,7 +195,7 @@ namespace SignalInterceptor
             SignalInterceptorGameComponent comp = Current.Game.GetComponent<SignalInterceptorGameComponent>();
             if (comp != null)
             {
-                comp.TrackVIPSite(site, threatPoints, realFaction, subtype);
+                comp.TrackVIPSite(site, threatPoints, realFaction, subtype, timeoutTicks);
             }
 
             slate.Set("site", site);
@@ -190,7 +209,115 @@ namespace SignalInterceptor
                         " | Real faction: " + realFaction.Name +
                         " | Site faction: " + (site.Faction?.Name ?? "null") +
                         " | Intended site faction: " + (siteFaction?.Name ?? "null") +
-                        " | Threat: " + threatPoints);
+                        " | Threat: " + threatPoints +
+                        " | Shuttle origin: " + (shuttleOrigin?.LabelCap.ToString() ?? "null") +
+                        " | Shuttle destination: " + (shuttleDestination?.LabelCap.ToString() ?? "null"));
+        }
+
+        private bool TryFindShuttleRouteTile(
+            Map playerMap,
+            Faction faction,
+            out PlanetTile resultTile,
+            out Settlement origin,
+            out Settlement destination)
+        {
+            resultTile = PlanetTile.Invalid;
+            origin = null;
+            destination = null;
+
+            if (playerMap == null || faction == null)
+                return false;
+
+            PlanetTile playerTile = playerMap.Tile;
+
+            List<Settlement> settlements = Find.WorldObjects.Settlements
+                .Where(s => s != null
+                         && !s.Destroyed
+                         && s.Faction == faction
+                         && s.Tile.Valid)
+                .OrderBy(s => Find.WorldGrid.ApproxDistanceInTiles(playerTile, s.Tile))
+                .Take(2)
+                .ToList();
+
+            if (settlements.Count < 2)
+                return false;
+
+            origin = settlements[0];
+            destination = settlements[1];
+
+            float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(origin.Tile, destination.Tile);
+
+            if (routeDistance <= 0f)
+                return false;
+
+            List<PlanetTile> candidates = new List<PlanetTile>();
+
+            /*
+             * Ищем тайлы, которые лежат примерно на прямом маршруте между двумя поселениями.
+             * Условие:
+             * distance(origin -> tile) + distance(tile -> destination)
+             * примерно равно distance(origin -> destination).
+             */
+            int tilesCount = Find.WorldGrid.TilesCount;
+
+            for (int i = 0; i < tilesCount; i++)
+            {
+                PlanetTile tile = new PlanetTile(i);
+
+                if (!IsValidSiteTile(tile))
+                    continue;
+
+                float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(origin.Tile, tile);
+                float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destination.Tile);
+
+                if (distFromOrigin < 3f || distToDestination < 3f)
+                    continue;
+
+                float totalRouteDist = distFromOrigin + distToDestination;
+                float deviation = totalRouteDist - routeDistance;
+
+                /*
+                 * До 2 тайлов погрешности — достаточно похоже на прямую линию.
+                 */
+                if (deviation >= 0f && deviation <= 2f)
+                {
+                    candidates.Add(tile);
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                Log.Warning("[Signal Interceptor] Could not find shuttle route tile between settlements. Falling back to default site tile.");
+                return false;
+            }
+
+            resultTile = candidates.RandomElement();
+
+            Log.Message("[Signal Interceptor] Shuttle route tile selected. " +
+                        "Origin: " + origin.LabelCap +
+                        " | Destination: " + destination.LabelCap +
+                        " | Route distance: " + routeDistance +
+                        " | Candidates: " + candidates.Count +
+                        " | Tile: " + resultTile);
+
+            return true;
+        }
+
+        private bool IsValidSiteTile(PlanetTile tile)
+        {
+            if (!tile.Valid)
+                return false;
+
+            if (Find.WorldGrid[tile].WaterCovered)
+                return false;
+
+            if (Find.WorldGrid[tile].hilliness == Hilliness.Impassable)
+                return false;
+
+            if (Find.WorldObjects.ObjectsAt(tile).Any())
+                return false;
+
+            return true;
         }
 
         private string GenerateMechanitorSignalQuestName()
@@ -199,18 +326,18 @@ namespace SignalInterceptor
                 "SI_MechanitorSignal_QuestNouns",
                 new List<string>
                 {
-            "Протокол",
-            "Сигнал",
-            "Контур",
-            "Импульс",
-            "Шёпот",
-            "Пульс",
-            "Код",
-            "Резонанс",
-            "Отклик",
-            "Маршрут",
-            "След",
-            "Узел"
+                    "Протокол",
+                    "Сигнал",
+                    "Контур",
+                    "Импульс",
+                    "Шёпот",
+                    "Пульс",
+                    "Код",
+                    "Резонанс",
+                    "Отклик",
+                    "Маршрут",
+                    "След",
+                    "Узел"
                 }
             );
 
@@ -218,18 +345,18 @@ namespace SignalInterceptor
                 "SI_MechanitorSignal_QuestAdjectives",
                 new List<string>
                 {
-            "Блуждающего Ядра",
-            "Железной Воли",
-            "Чужого Разума",
-            "Мёртвой Машины",
-            "Потерянного Механитора",
-            "Сломанного Контроля",
-            "Стального Сердца",
-            "Пепельного Сигнала",
-            "Одинокого Повелителя",
-            "Холодного Сознания",
-            "Неподвижной Души",
-            "Забытой Команды"
+                    "Блуждающего Ядра",
+                    "Железной Воли",
+                    "Чужого Разума",
+                    "Мёртвой Машины",
+                    "Потерянного Механитора",
+                    "Сломанного Контроля",
+                    "Стального Сердца",
+                    "Пепельного Сигнала",
+                    "Одинокого Повелителя",
+                    "Холодного Сознания",
+                    "Неподвижной Души",
+                    "Забытой Команды"
                 }
             );
 
@@ -254,7 +381,7 @@ namespace SignalInterceptor
                     "Рой",
                     "Легион",
                     "Отряд",
-                    "Зов",
+                    "Зов"
                 }
             );
 
@@ -274,7 +401,7 @@ namespace SignalInterceptor
                     "Ложных",
                     "Стертых",
                     "Раздвоенных",
-                    "Ненастоящих",
+                    "Ненастоящих"
                 }
             );
 
@@ -444,28 +571,45 @@ namespace SignalInterceptor
             }
         }
 
-        private string GetQuestDescription(VIPSubtype subtype, string workerName, string coloredFaction)
+        private string GetQuestDescription(
+            VIPSubtype subtype,
+            string workerName,
+            string coloredFaction,
+            string originSettlement,
+            string destinationSettlement)
         {
             switch (subtype)
             {
                 case VIPSubtype.ShuttleVIP:
-                    return "SI_VIP_Desc_Shuttle".Translate(workerName, coloredFaction);
+                    return FormatKeyed(
+                        "SI_VIP_Desc_Shuttle",
+                        workerName,
+                        coloredFaction,
+                        originSettlement,
+                        destinationSettlement
+                    );
 
                 case VIPSubtype.PsycasterVIP:
-                    return "SI_VIP_Desc_Psycaster".Translate(workerName);
+                    return FormatKeyed("SI_VIP_Desc_Psycaster", workerName);
 
                 case VIPSubtype.MechanitorSignalVIP:
-                    return "SI_VIP_Desc_MechanitorSignal".Translate(workerName);
+                    return FormatKeyed("SI_VIP_Desc_MechanitorSignal", workerName);
 
                 case VIPSubtype.PilgrimVIP:
-                    return "SI_VIP_Desc_Pilgrim".Translate(workerName, coloredFaction);
+                    return FormatKeyed("SI_VIP_Desc_Pilgrim", workerName, coloredFaction);
 
                 case VIPSubtype.DoppelgangerVIP:
-                    return "SI_VIP_Desc_Doppelganger".Translate(workerName);
+                    return FormatKeyed("SI_VIP_Desc_Doppelganger", workerName);
 
                 default:
                     return "";
             }
+        }
+
+        private string FormatKeyed(string key, params object[] args)
+        {
+            string template = key.Translate().ToString();
+            return string.Format(template, args);
         }
 
         private string FactionColored(Faction faction)

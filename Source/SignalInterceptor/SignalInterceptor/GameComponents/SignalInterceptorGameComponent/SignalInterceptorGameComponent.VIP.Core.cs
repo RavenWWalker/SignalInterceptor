@@ -7,7 +7,7 @@ namespace SignalInterceptor
 {
     public partial class SignalInterceptorGameComponent
     {
-        public void TrackVIPSite(Site site, float threatPoints, Faction faction, VIPSubtype subtype)
+        public void TrackVIPSite(Site site, float threatPoints, Faction faction, VIPSubtype subtype, int timeoutTicks)
         {
             trackedVIPSites.Add(new VIPSiteData
             {
@@ -18,7 +18,7 @@ namespace SignalInterceptor
                 subtype = subtype,
                 vipSpawned = false,
                 rewardGiven = false,
-                expireTick = Find.TickManager.TicksGame + 60000 * Rand.RangeInclusive(1, 2)
+                expireTick = Find.TickManager.TicksGame + timeoutTicks
             });
 
             Log.Message("[Signal Interceptor] Tracking VIP site. " +
@@ -26,7 +26,8 @@ namespace SignalInterceptor
                         " | Context faction: " + (faction?.Name ?? "null") +
                         " | Site faction: " + (site?.Faction?.Name ?? "null") +
                         " | Enemy faction: null" +
-                        " | Threat: " + threatPoints);
+                        " | Threat: " + threatPoints +
+                        " | Expire tick: " + (Find.TickManager.TicksGame + timeoutTicks));
         }
 
         public void GiveVIPVictoryReward()
@@ -253,6 +254,19 @@ namespace SignalInterceptor
 
                 if (!data.rewardGiven && data.expireTick > 0 && Find.TickManager.TicksGame >= data.expireTick)
                 {
+                    /*
+                     * Если игрок уже вошёл на карту сайта — не схлопываем сайт.
+                     * Считаем, что цель уже обнаружена, и таймер больше не нужен.
+                     */
+                    if (data.site != null && data.site.HasMap)
+                    {
+                        data.expireTick = -1;
+
+                        Log.Message("[Signal Interceptor] VIP site timer expired, but map is active. Timeout disabled. Subtype=" + data.subtype);
+
+                        continue;
+                    }
+
                     FailVIPQuest(data, "SI_VIP_FailedExpiredText");
 
                     if (data.site != null && data.site.Spawned)
