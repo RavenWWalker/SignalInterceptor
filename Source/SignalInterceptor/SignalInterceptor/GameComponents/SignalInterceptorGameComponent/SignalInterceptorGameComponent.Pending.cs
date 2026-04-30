@@ -97,5 +97,35 @@ namespace SignalInterceptor
                 IncidentDefOf.RaidEnemy.Worker.TryExecute(parms2);
             }
         }
+
+        private void TickPendingSlaveDeliveries()
+        {
+            // Обработка отложенных доставок рабов
+            for (int i = pendingSlaveDeliveries.Count - 1; i >= 0; i--)
+            {
+                PendingSlaveDelivery delivery = pendingSlaveDeliveries[i];
+
+                if (Find.TickManager.TicksGame >= delivery.deliveryTick)
+                {
+                    DeliverSlave(delivery);
+                    pendingSlaveDeliveries.RemoveAt(i);
+                }
+            }
+        }
+
+        private void TickPendingRaids()
+        {
+            // Обработка отложенных рейдов контрразведки
+            for (int i = pendingRaids.Count - 1; i >= 0; i--)
+            {
+                PendingRaid raid = pendingRaids[i];
+
+                if (Find.TickManager.TicksGame >= raid.fireTick)
+                {
+                    ExecuteRaid(raid);
+                    pendingRaids.RemoveAt(i);
+                }
+            }
+        }
     }
 }
