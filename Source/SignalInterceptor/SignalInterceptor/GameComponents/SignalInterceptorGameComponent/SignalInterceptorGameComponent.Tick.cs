@@ -10,10 +10,32 @@ namespace SignalInterceptor
     {
         public override void GameComponentTick()
         {
+            TickDoppelgangerSettlementCleanup();
+
+            TickVIPSites();
+
+            if (Find.TickManager.TicksGame % 60 != 0)
+                return;
+
+            TickStashSites();
+            TickPendingSlaveDeliveries();
+            TickPendingRaids();
+
+            TickDoppelgangerFightRetargeting();
+            TickDoppelgangerHatred();
+            TickDoppelgangerFightIncident();
+        }
+
+        private void TickDoppelgangerSettlementCleanup()
+        {
             if (Find.TickManager.TicksGame % 250 == 0)
             {
                 CleanupDoppelgangerSettlements();
             }
+        }
+
+        private void TickVIPSites()
+        {
             // VIP — каждый тик для мгновенного спавна + проверка победы/ухода с карты
             for (int i = trackedVIPSites.Count - 1; i >= 0; i--)
             {
@@ -150,10 +172,10 @@ namespace SignalInterceptor
                     }
                 }
             }
+        }
 
-            if (Find.TickManager.TicksGame % 60 != 0)
-                return;
-
+        private void TickStashSites()
+        {
             // Обработка stash сайтов
             for (int i = trackedSites.Count - 1; i >= 0; i--)
             {
@@ -171,29 +193,40 @@ namespace SignalInterceptor
                     data.lootSpawned = true;
                 }
             }
+        }
 
+        private void TickPendingSlaveDeliveries()
+        {
             // Обработка отложенных доставок рабов
             for (int i = pendingSlaveDeliveries.Count - 1; i >= 0; i--)
             {
                 PendingSlaveDelivery delivery = pendingSlaveDeliveries[i];
+
                 if (Find.TickManager.TicksGame >= delivery.deliveryTick)
                 {
                     DeliverSlave(delivery);
                     pendingSlaveDeliveries.RemoveAt(i);
                 }
             }
+        }
 
+        private void TickPendingRaids()
+        {
             // Обработка отложенных рейдов контрразведки
             for (int i = pendingRaids.Count - 1; i >= 0; i--)
             {
                 PendingRaid raid = pendingRaids[i];
+
                 if (Find.TickManager.TicksGame >= raid.fireTick)
                 {
                     ExecuteRaid(raid);
                     pendingRaids.RemoveAt(i);
                 }
             }
+        }
 
+        private void TickDoppelgangerFightRetargeting()
+        {
             // Перенацеливание двойников — каждые 120 тиков
             if (doppelgangerFightActive && Find.TickManager.TicksGame % 120 == 0)
             {
@@ -228,6 +261,7 @@ namespace SignalInterceptor
                                         p.mindState.mentalStateHandler.CurState.RecoverFromState();
                                     }
                                 }
+
                                 return;
                             }
 
@@ -249,6 +283,7 @@ namespace SignalInterceptor
                             {
                                 // Есть живые двойники — перезапускаем бой
                                 List<Pawn> targets = aliveGroup.ToList();
+
                                 foreach (Pawn attacker in targets.Where(p => !p.Downed && !p.IsPrisonerOfColony))
                                 {
                                     Pawn victim = targets
@@ -273,8 +308,11 @@ namespace SignalInterceptor
                                         }
 
                                         int beforeCount = Find.LetterStack.LettersListForReading.Count;
+
                                         attacker.mindState?.mentalStateHandler?.TryStartMentalState(
-                                            DefDatabase<MentalStateDef>.GetNamed("MurderousRage"), forced: true);
+                                            DefDatabase<MentalStateDef>.GetNamed("MurderousRage"),
+                                            forced: true
+                                        );
 
                                         while (Find.LetterStack.LettersListForReading.Count > beforeCount)
                                         {
@@ -302,22 +340,26 @@ namespace SignalInterceptor
                                 Pawn survivor = allAlive.FirstOrDefault(p => !p.Downed);
 
                                 TraitDef originalTrait = DefDatabase<TraitDef>.GetNamedSilentFail("SI_TheOriginal");
-                                if (originalTrait != null && survivor != null
+                                if (originalTrait != null
+                                    && survivor != null
                                     && survivor.story?.traits != null
                                     && !survivor.story.traits.HasTrait(originalTrait))
                                 {
                                     survivor.story.traits.GainTrait(new Trait(originalTrait, 0, true));
+
                                     Find.LetterStack.ReceiveLetter(
                                         "SI_TheOriginal_Title".Translate(),
                                         "SI_TheOriginal_Text".Translate(survivor.LabelShort),
                                         LetterDefOf.PositiveEvent,
                                         new LookTargets(survivor)
                                     );
+
                                     Log.Message("[Signal Interceptor] Trait 'The Original' given to: " + survivor.LabelShort);
                                 }
 
                                 doppelgangerFightActive = false;
                                 doppelgangerFightStartTick = -1;
+
                                 Log.Message("[Signal Interceptor] Doppelganger fight ended.");
                             }
                         }
@@ -336,7 +378,9 @@ namespace SignalInterceptor
                                 if (curState is MentalState_MurderousRage rage)
                                 {
                                     Pawn curTarget = rage.target;
-                                    if (curTarget == null || curTarget.Dead
+
+                                    if (curTarget == null
+                                        || curTarget.Dead
                                         || !dopps.Contains(curTarget)
                                         || (curTarget.Downed && standing.Count > 1))
                                     {
@@ -388,8 +432,11 @@ namespace SignalInterceptor
                                         }
 
                                         int beforeCount = Find.LetterStack.LettersListForReading.Count;
+
                                         attacker.mindState?.mentalStateHandler?.TryStartMentalState(
-                                            DefDatabase<MentalStateDef>.GetNamed("MurderousRage"), forced: true);
+                                            DefDatabase<MentalStateDef>.GetNamed("MurderousRage"),
+                                            forced: true
+                                        );
 
                                         while (Find.LetterStack.LettersListForReading.Count > beforeCount)
                                         {
@@ -414,7 +461,10 @@ namespace SignalInterceptor
                     }
                 }
             }
+        }
 
+        private void TickDoppelgangerHatred()
+        {
             // Проставление ненависти между двойниками — раз в день
             if (Find.TickManager.TicksGame % 60000 == 0)
             {
@@ -423,6 +473,7 @@ namespace SignalInterceptor
                 {
                     HediffDef markDef = DefDatabase<HediffDef>.GetNamedSilentFail("SI_DoppelgangerMark");
                     ThoughtDef hatredDef = DefDatabase<ThoughtDef>.GetNamedSilentFail("SI_DoppelgangerHatred");
+
                     if (markDef != null && hatredDef != null)
                     {
                         List<Pawn> allMarked = playerMap.mapPawns.AllPawnsSpawned
@@ -435,9 +486,11 @@ namespace SignalInterceptor
                         Log.Message("[Signal Interceptor] Hatred check. Marked pawns: " + allMarked.Count);
 
                         var groups = allMarked.GroupBy(p => p.Name?.ToStringShort ?? "");
+
                         foreach (var group in groups)
                         {
                             List<Pawn> dopps = group.ToList();
+
                             if (dopps.Count < 2)
                                 continue;
 
@@ -462,7 +515,10 @@ namespace SignalInterceptor
                     }
                 }
             }
+        }
 
+        private void TickDoppelgangerFightIncident()
+        {
             if (Find.TickManager.TicksGame % 60000 == 0)
             {
                 Map playerMap = Find.Maps.FirstOrDefault(m => m.IsPlayerHome);
