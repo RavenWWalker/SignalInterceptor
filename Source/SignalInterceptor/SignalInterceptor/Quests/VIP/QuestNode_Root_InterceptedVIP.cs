@@ -43,30 +43,71 @@ namespace SignalInterceptor
 
             if (validFactions.Count == 0)
             {
+                AddFallbackQuestRules();
                 Log.Warning("[Signal Interceptor] No valid factions available for VIP quest.");
                 return;
             }
 
-            Faction realFaction = validFactions.RandomElement();
-            VIPSubtype subtype = ChooseSubtype(realFaction, map);
+            Faction realFaction = null;
+            VIPSubtype subtype = VIPSubtype.ShuttleVIP;
 
             Settlement shuttleOrigin = null;
             Settlement shuttleDestination = null;
 
-            PlanetTile tile;
+            PlanetTile tile = PlanetTile.Invalid;
 
-            if (subtype == VIPSubtype.ShuttleVIP)
+            List<Faction> shuffledFactions = validFactions.InRandomOrder().ToList();
+            bool foundValidQuestTarget = false;
+
+            foreach (Faction factionCandidate in shuffledFactions)
             {
-                if (!TryFindShuttleRouteTile(map, realFaction, out tile, out shuttleOrigin, out shuttleDestination))
+                List<VIPSubtype> subtypes = GetAvailableVIPSubtypes(factionCandidate, map).InRandomOrder().ToList();
+
+                foreach (VIPSubtype subtypeCandidate in subtypes)
                 {
-                    if (!TileFinder.TryFindNewSiteTile(out tile, minDist: 16, maxDist: 36))
-                        return;
+                    PlanetTile candidateTile = PlanetTile.Invalid;
+                    Settlement candidateOrigin = null;
+                    Settlement candidateDestination = null;
+
+                    if (subtypeCandidate == VIPSubtype.ShuttleVIP)
+                    {
+                        if (!TryFindShuttleRouteTile(
+                                map,
+                                factionCandidate,
+                                out candidateTile,
+                                out candidateOrigin,
+                                out candidateDestination))
+                        {
+                            Log.Message("[Signal Interceptor] Shuttle VIP candidate skipped: no valid route tile found for faction " +
+                                        (factionCandidate?.Name ?? "null"));
+
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        if (!TileFinder.TryFindNewSiteTile(out candidateTile, minDist: 16, maxDist: 36))
+                            continue;
+                    }
+
+                    realFaction = factionCandidate;
+                    subtype = subtypeCandidate;
+                    tile = candidateTile;
+                    shuttleOrigin = candidateOrigin;
+                    shuttleDestination = candidateDestination;
+                    foundValidQuestTarget = true;
+                    break;
                 }
+
+                if (foundValidQuestTarget)
+                    break;
             }
-            else
+
+            if (!foundValidQuestTarget || realFaction == null || !tile.Valid)
             {
-                if (!TileFinder.TryFindNewSiteTile(out tile, minDist: 16, maxDist: 36))
-                    return;
+                AddFallbackQuestRules();
+                Log.Warning("[Signal Interceptor] Failed to find valid VIP quest target.");
+                return;
             }
 
             float threatPoints = GetThreatPoints(subtype, realFaction);
@@ -214,12 +255,130 @@ namespace SignalInterceptor
                         " | Shuttle destination: " + (shuttleDestination?.LabelCap.ToString() ?? "null"));
         }
 
+        private void AddFallbackQuestRules()
+        {
+            QuestGen.AddQuestNameRules(new List<Rule>
+            {
+                new Rule_String("questName", "Intercepted signal")
+            });
+
+            QuestGen.AddQuestDescriptionRules(new List<Rule>
+            {
+                new Rule_String("questDescription", "The intercepted signal was too distorted to decode.")
+            });
+        }
+
         private List<Faction> GetValidFactionsForVIP(Map map)
         {
             return Find.FactionManager.AllFactions
                 .Where(f => IsValidBaseVIPFaction(f))
                 .Where(f => GetAvailableVIPSubtypes(f, map).Count > 0)
                 .ToList();
+        }
+
+        private struct ShuttleRoutePair
+        {
+            public Settlement origin;
+            public Settlement destination;
+            public float weight;
+
+            public ShuttleRoutePair(Settlement origin, Settlement destination, float weight)
+            {
+                this.origin = origin;
+                this.destination = destination;
+                this.weight = weight;
+            }
+        }
+
+        private bool TryChooseShuttleRouteSettlements(
+    Map playerMap,
+    Faction faction,
+    out Settlement origin,
+    out Settlement destination)
+        {
+            origin = null;
+            destination = null;
+
+            if (playerMap == null || faction == null)
+                return false;
+
+            PlanetTile playerTile = playerMap.Tile;
+
+            List<Settlement> settlements = GetValidShuttleSettlements(faction, playerMap);
+
+            if (settlements.Count < 2)
+                return false;
+
+            const float minRouteDistance = 4f;
+            const float maxRouteDistance = 180f;
+            const float maxAverageDistanceFromPlayer = 350f;
+
+            List<ShuttleRoutePair> pairs = new List<ShuttleRoutePair>();
+
+            for (int i = 0; i < settlements.Count; i++)
+            {
+                for (int j = i + 1; j < settlements.Count; j++)
+                {
+                    Settlement a = settlements[i];
+                    Settlement b = settlements[j];
+
+                    if (a == null || b == null)
+                        continue;
+
+                    PlanetTile aTile = a.Tile;
+                    PlanetTile bTile = b.Tile;
+
+                    if (!IsValidDistancePair(aTile, bTile))
+                        continue;
+
+                    if (!IsValidDistancePair(playerTile, aTile))
+                        continue;
+
+                    if (!IsValidDistancePair(playerTile, bTile))
+                        continue;
+
+                    float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(aTile, bTile);
+
+                    if (routeDistance < minRouteDistance || routeDistance > maxRouteDistance)
+                        continue;
+
+                    float distAFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, aTile);
+                    float distBFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, bTile);
+                    float averageDistanceFromPlayer = (distAFromPlayer + distBFromPlayer) / 2f;
+
+                    if (averageDistanceFromPlayer > maxAverageDistanceFromPlayer)
+                        continue;
+
+                    /*
+                     * Чем ближе маршрут к игроку — тем выше шанс.
+                     * Но дальние маршруты не запрещены полностью, если они в пределах лимита.
+                     */
+                    float proximityWeight = Mathf.Lerp(
+                        2.5f,
+                        0.25f,
+                        Mathf.Clamp01(averageDistanceFromPlayer / maxAverageDistanceFromPlayer)
+                    );
+
+                    /*
+                     * Слишком короткие маршруты менее интересны.
+                     */
+                    float routeLengthWeight = Mathf.Clamp(routeDistance / 20f, 0.5f, 2f);
+
+                    float weight = proximityWeight * routeLengthWeight;
+
+                    pairs.Add(new ShuttleRoutePair(a, b, weight));
+                }
+            }
+
+            if (pairs.Count == 0)
+                return false;
+
+            ShuttleRoutePair selected = pairs.RandomElementByWeight(p => p.weight);
+
+            origin = selected.origin;
+            destination = selected.destination;
+
+            return true;
         }
 
         private bool IsValidBaseVIPFaction(Faction faction)
@@ -350,34 +509,29 @@ namespace SignalInterceptor
             if (playerMap == null || faction == null)
                 return false;
 
-            List<Settlement> settlements = GetValidShuttleSettlements(faction, playerMap);
+            PlanetTile playerTile = playerMap.Tile;
 
-            if (settlements.Count < 2)
+            if (!TryChooseShuttleRouteSettlements(playerMap, faction, out origin, out destination))
                 return false;
 
-            origin = settlements[0];
-            destination = settlements[1];
-
-            /*
-             * ВАЖНО:
-             * origin и destination — out-параметры.
-             * Их нельзя использовать внутри lambda / OrderBy / Where.
-             * Поэтому копируем нужные значения в обычные локальные переменные.
-             */
             PlanetTile originTile = origin.Tile;
             PlanetTile destinationTile = destination.Tile;
+
             string originLabel = origin.LabelCap;
             string destinationLabel = destination.LabelCap;
+
+            if (!IsValidDistancePair(originTile, destinationTile))
+                return false;
 
             float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(originTile, destinationTile);
 
             if (routeDistance <= 0f)
                 return false;
 
-            const int attempts = 1500;
-            const int minDist = 4;
-            const int maxDist = 250;
-            const float maxDeviation = 6f;
+            const int attempts = 3000;
+            const int minDist = 1;
+            const int maxDist = 350;
+            const float maxDeviation = 8f;
 
             List<PlanetTile> candidates = new List<PlanetTile>();
 
@@ -389,10 +543,19 @@ namespace SignalInterceptor
                 if (!IsValidSiteTile(tile))
                     continue;
 
+                if (tile.LayerDef != originTile.LayerDef)
+                    continue;
+
+                if (!IsValidDistancePair(originTile, tile))
+                    continue;
+
+                if (!IsValidDistancePair(tile, destinationTile))
+                    continue;
+
                 float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(originTile, tile);
                 float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destinationTile);
 
-                if (distFromOrigin < 3f || distToDestination < 3f)
+                if (distFromOrigin < 1f || distToDestination < 1f)
                     continue;
 
                 float totalDistance = distFromOrigin + distToDestination;
@@ -406,9 +569,12 @@ namespace SignalInterceptor
 
             if (candidates.Count == 0)
             {
-                Log.Message("[Signal Interceptor] Shuttle route tile not found between " +
-                            originLabel + " and " + destinationLabel +
-                            ". Shuttle VIP subtype will be skipped.");
+                Log.Message("[Signal Interceptor] Shuttle route tile not found. " +
+                            "Faction: " + faction.Name +
+                            " | Origin: " + originLabel +
+                            " | Destination: " + destinationLabel +
+                            " | Route distance: " + routeDistance +
+                            " | Shuttle VIP skipped.");
 
                 resultTile = PlanetTile.Invalid;
                 return false;
@@ -419,6 +585,7 @@ namespace SignalInterceptor
                 {
                     float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(originTile, tile);
                     float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destinationTile);
+
                     float totalDistance = distFromOrigin + distToDestination;
                     float deviation = Mathf.Abs(totalDistance - routeDistance);
                     float balance = Mathf.Abs(distFromOrigin - distToDestination);
@@ -428,7 +595,8 @@ namespace SignalInterceptor
                 .First();
 
             Log.Message("[Signal Interceptor] Shuttle route tile selected. " +
-                        "Origin: " + originLabel +
+                        "Faction: " + faction.Name +
+                        " | Origin: " + originLabel +
                         " | Destination: " + destinationLabel +
                         " | Route distance: " + routeDistance +
                         " | Candidates: " + candidates.Count +
