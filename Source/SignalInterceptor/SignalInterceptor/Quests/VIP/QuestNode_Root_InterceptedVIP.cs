@@ -193,6 +193,8 @@ namespace SignalInterceptor
              * Истечение срока контролируется SignalInterceptorGameComponent.
              */
 
+            quest.WorldObjectTimeout(site, timeoutTicks);
+
             string allEnemiesDefeatedSignal = QuestGenUtility.QuestTagSignal(questTag, "AllEnemiesDefeated");
             quest.SignalPass(delegate
             {
@@ -235,7 +237,7 @@ namespace SignalInterceptor
             SignalInterceptorGameComponent comp = Current.Game.GetComponent<SignalInterceptorGameComponent>();
             if (comp != null)
             {
-                comp.TrackVIPSite(site, threatPoints, realFaction, subtype, timeoutTicks);
+                comp.TrackVIPSite(site, threatPoints, realFaction, subtype, -1);
             }
 
             slate.Set("site", site);

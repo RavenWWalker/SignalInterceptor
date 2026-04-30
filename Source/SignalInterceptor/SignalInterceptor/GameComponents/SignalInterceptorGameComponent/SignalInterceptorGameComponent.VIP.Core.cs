@@ -18,7 +18,7 @@ namespace SignalInterceptor
                 subtype = subtype,
                 vipSpawned = false,
                 rewardGiven = false,
-                expireTick = Find.TickManager.TicksGame + timeoutTicks
+                expireTick = timeoutTicks > 0 ? Find.TickManager.TicksGame + timeoutTicks : -1
             });
 
             Log.Message("[Signal Interceptor] Tracking VIP site. " +
@@ -27,7 +27,7 @@ namespace SignalInterceptor
                         " | Site faction: " + (site?.Faction?.Name ?? "null") +
                         " | Enemy faction: null" +
                         " | Threat: " + threatPoints +
-                        " | Expire tick: " + (Find.TickManager.TicksGame + timeoutTicks));
+                        " | Expire tick: " + (timeoutTicks > 0 ? (Find.TickManager.TicksGame + timeoutTicks).ToString() : "handled by quest timeout"));
         }
 
         public void GiveVIPVictoryReward()
