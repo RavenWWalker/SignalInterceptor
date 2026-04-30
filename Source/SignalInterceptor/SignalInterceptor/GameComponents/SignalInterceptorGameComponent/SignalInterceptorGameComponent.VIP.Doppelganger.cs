@@ -960,5 +960,13 @@ namespace SignalInterceptor
 
             pawn.health.AddHediff(mark);
         }
+
+        private void TickDoppelgangerSettlementCleanup()
+        {
+            if (Find.TickManager.TicksGame % 250 == 0)
+            {
+                CleanupDoppelgangerSettlements();
+            }
+        }
     }
 }

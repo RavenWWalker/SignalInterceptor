@@ -302,5 +302,26 @@ namespace SignalInterceptor
 
             return loot;
         }
+
+        private void TickStashSites()
+        {
+            // Обработка stash сайтов
+            for (int i = trackedSites.Count - 1; i >= 0; i--)
+            {
+                StashSiteData data = trackedSites[i];
+
+                if (data.site == null || !data.site.Spawned)
+                {
+                    trackedSites.RemoveAt(i);
+                    continue;
+                }
+
+                if (!data.lootSpawned && data.site.HasMap)
+                {
+                    SpawnLoot(data.site.Map, data.threatPoints);
+                    data.lootSpawned = true;
+                }
+            }
+        }
     }
 }
