@@ -28,12 +28,7 @@ namespace SignalInterceptor
             if (map == null)
                 return false;
 
-            return Find.FactionManager.AllFactions
-                .Any(f => !f.IsPlayer
-                       && !f.defeated
-                       && !f.Hidden
-                       && !f.temporary
-                       && f.def.humanlikeFaction);
+            return GetValidFactionsForVIP(map).Any();
         }
 
         protected override void RunInt()
@@ -44,15 +39,16 @@ namespace SignalInterceptor
             Map map = slate.Get<Map>("map");
             Pawn worker = slate.Get<Pawn>("worker");
 
-            Faction realFaction = Find.FactionManager.AllFactions
-                .Where(f => !f.IsPlayer
-                         && !f.defeated
-                         && !f.Hidden
-                         && !f.temporary
-                         && f.def.humanlikeFaction)
-                .RandomElement();
+            List<Faction> validFactions = GetValidFactionsForVIP(map);
 
-            VIPSubtype subtype = ChooseSubtype(realFaction);
+            if (validFactions.Count == 0)
+            {
+                Log.Warning("[Signal Interceptor] No valid factions available for VIP quest.");
+                return;
+            }
+
+            Faction realFaction = validFactions.RandomElement();
+            VIPSubtype subtype = ChooseSubtype(realFaction, map);
 
             Settlement shuttleOrigin = null;
             Settlement shuttleDestination = null;
@@ -74,6 +70,8 @@ namespace SignalInterceptor
             }
 
             float threatPoints = GetThreatPoints(subtype, realFaction);
+            int timeoutTicks = TimeoutDaysRange.RandomInRange * 60000;
+
             SitePartDef vipPartDef = GetSitePartDef(subtype);
 
             Faction siteFaction =
@@ -96,18 +94,19 @@ namespace SignalInterceptor
 
             site.factionMustRemainHostile = false;
 
-            int timeoutTicks = TimeoutDaysRange.RandomInRange * 60000;
-
             string workerName = worker?.LabelShort ?? "A colonist";
             string coloredFaction = FactionColored(realFaction);
 
             string originName = shuttleOrigin != null
-                ? shuttleOrigin.LabelCap.ToString()
-                : "неизвестного поселения";
+                ? SettlementColored(shuttleOrigin)
+                : "SI_ShuttleUnknownOrigin".Translate().ToString();
 
             string destinationName = shuttleDestination != null
-                ? shuttleDestination.LabelCap.ToString()
-                : "другого поселения";
+                ? SettlementColored(shuttleDestination)
+                : "SI_ShuttleUnknownDestination".Translate().ToString();
+
+            int vipTier = GetVIPTierForQuest(threatPoints);
+            string shuttleSecurityDesc = GetShuttleSecurityDescription(vipTier);
 
             string questName = GetQuestName(subtype);
 
@@ -126,7 +125,8 @@ namespace SignalInterceptor
                 workerName,
                 coloredFaction,
                 originName,
-                destinationName
+                destinationName,
+                shuttleSecurityDesc
             );
 
             List<Rule> nameRules = new List<Rule>
@@ -147,7 +147,6 @@ namespace SignalInterceptor
             quest.SpawnWorldObject(site);
 
             /*
-             * ВАЖНО:
              * Не используем quest.WorldObjectTimeout(site, timeoutTicks),
              * чтобы сайт не схлопнулся, если игрок уже вошёл на карту.
              * Истечение срока контролируется SignalInterceptorGameComponent.
@@ -210,8 +209,131 @@ namespace SignalInterceptor
                         " | Site faction: " + (site.Faction?.Name ?? "null") +
                         " | Intended site faction: " + (siteFaction?.Name ?? "null") +
                         " | Threat: " + threatPoints +
+                        " | Tier: " + vipTier +
                         " | Shuttle origin: " + (shuttleOrigin?.LabelCap.ToString() ?? "null") +
                         " | Shuttle destination: " + (shuttleDestination?.LabelCap.ToString() ?? "null"));
+        }
+
+        private List<Faction> GetValidFactionsForVIP(Map map)
+        {
+            return Find.FactionManager.AllFactions
+                .Where(f => IsValidBaseVIPFaction(f))
+                .Where(f => GetAvailableVIPSubtypes(f, map).Count > 0)
+                .ToList();
+        }
+
+        private bool IsValidBaseVIPFaction(Faction faction)
+        {
+            if (faction == null)
+                return false;
+
+            if (faction.IsPlayer)
+                return false;
+
+            if (faction.defeated)
+                return false;
+
+            if (faction.Hidden)
+                return false;
+
+            if (faction.temporary)
+                return false;
+
+            if (faction.def == null || !faction.def.humanlikeFaction)
+                return false;
+
+            return true;
+        }
+
+        private VIPSubtype ChooseSubtype(Faction faction, Map map)
+        {
+            List<VIPSubtype> available = GetAvailableVIPSubtypes(faction, map);
+
+            if (available.Count == 0)
+            {
+                Log.Warning("[Signal Interceptor] ChooseSubtype called with no available VIP subtypes. Falling back to ShuttleVIP.");
+                return VIPSubtype.ShuttleVIP;
+            }
+
+            return available.RandomElement();
+        }
+
+        private List<VIPSubtype> GetAvailableVIPSubtypes(Faction faction, Map map)
+        {
+            List<VIPSubtype> available = new List<VIPSubtype>();
+
+            /*
+             * ShuttleVIP требует две наземные базы фракции.
+             * Это отсекает космических торговцев и похожие фракции.
+             */
+            if (CanUseShuttleVIP(faction, map))
+            {
+                available.Add(VIPSubtype.ShuttleVIP);
+            }
+
+            if (ModsConfig.RoyaltyActive)
+                available.Add(VIPSubtype.PsycasterVIP);
+
+            if (ModsConfig.BiotechActive)
+                available.Add(VIPSubtype.MechanitorSignalVIP);
+
+            if (ModsConfig.IdeologyActive)
+                available.Add(VIPSubtype.PilgrimVIP);
+
+            if (ModsConfig.AnomalyActive)
+                available.Add(VIPSubtype.DoppelgangerVIP);
+
+            return available;
+        }
+
+        private bool CanUseShuttleVIP(Faction faction, Map map)
+        {
+            if (faction == null || map == null)
+                return false;
+
+            if (faction.def == null)
+                return false;
+
+            if (faction.def.techLevel < TechLevel.Industrial)
+                return false;
+
+            return GetValidShuttleSettlements(faction, map).Count >= 2;
+        }
+
+        private List<Settlement> GetValidShuttleSettlements(Faction faction, Map map)
+        {
+            if (faction == null || map == null)
+                return new List<Settlement>();
+
+            PlanetTile playerTile = map.Tile;
+
+            return Find.WorldObjects.Settlements
+                .Where(s => s != null)
+                .Where(s => !s.Destroyed)
+                .Where(s => s.Faction == faction)
+                .Where(s => s.Tile.Valid)
+                .Where(s => s.Tile.LayerDef == playerTile.LayerDef)
+                .Where(s => IsValidDistancePair(playerTile, s.Tile))
+                .ToList();
+        }
+
+        private bool IsValidDistancePair(PlanetTile a, PlanetTile b)
+        {
+            if (!a.Valid || !b.Valid)
+                return false;
+
+            if (a.LayerDef != b.LayerDef)
+                return false;
+
+            try
+            {
+                Find.WorldGrid.ApproxDistanceInTiles(a, b);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool TryFindShuttleRouteTile(
@@ -230,20 +352,26 @@ namespace SignalInterceptor
 
             PlanetTile playerTile = playerMap.Tile;
 
-            List<Settlement> settlements = Find.WorldObjects.Settlements
-                .Where(s => s != null
-                         && !s.Destroyed
-                         && s.Faction == faction
-                         && s.Tile.Valid)
+            List<Settlement> settlements = GetValidShuttleSettlements(faction, playerMap)
                 .OrderBy(s => Find.WorldGrid.ApproxDistanceInTiles(playerTile, s.Tile))
                 .Take(2)
                 .ToList();
 
             if (settlements.Count < 2)
+            {
+                Log.Warning("[Signal Interceptor] Shuttle route failed: faction has fewer than 2 valid ground settlements. Faction=" +
+                            (faction.Name ?? "null"));
                 return false;
+            }
 
             origin = settlements[0];
             destination = settlements[1];
+
+            if (!IsValidDistancePair(origin.Tile, destination.Tile))
+            {
+                Log.Warning("[Signal Interceptor] Shuttle route failed: origin and destination are not valid distance pair.");
+                return false;
+            }
 
             float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(origin.Tile, destination.Tile);
 
@@ -253,22 +381,34 @@ namespace SignalInterceptor
             List<PlanetTile> candidates = new List<PlanetTile>();
 
             /*
-             * Ищем тайлы, которые лежат примерно на прямом маршруте между двумя поселениями.
-             * Условие:
-             * distance(origin -> tile) + distance(tile -> destination)
-             * примерно равно distance(origin -> destination).
+             * Не перебираем new PlanetTile(i).
+             * В RimWorld 1.6 есть слои планеты, и такой перебор может создать
+             * тайлы с неверным ID для текущего слоя.
+             *
+             * Вместо этого просим RimWorld подобрать валидные site-тайлы
+             * и фильтруем их по близости к маршруту.
              */
-            int tilesCount = Find.WorldGrid.TilesCount;
-
-            for (int i = 0; i < tilesCount; i++)
+            for (int attempt = 0; attempt < 300; attempt++)
             {
-                PlanetTile tile = new PlanetTile(i);
+                PlanetTile candidate;
 
-                if (!IsValidSiteTile(tile))
+                if (!TileFinder.TryFindNewSiteTile(out candidate, minDist: 4, maxDist: 60, allowCaravans: false))
                     continue;
 
-                float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(origin.Tile, tile);
-                float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destination.Tile);
+                if (!IsValidSiteTile(candidate))
+                    continue;
+
+                if (candidate.LayerDef != origin.Tile.LayerDef)
+                    continue;
+
+                if (!IsValidDistancePair(origin.Tile, candidate))
+                    continue;
+
+                if (!IsValidDistancePair(candidate, destination.Tile))
+                    continue;
+
+                float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(origin.Tile, candidate);
+                float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(candidate, destination.Tile);
 
                 if (distFromOrigin < 3f || distToDestination < 3f)
                     continue;
@@ -276,25 +416,28 @@ namespace SignalInterceptor
                 float totalRouteDist = distFromOrigin + distToDestination;
                 float deviation = totalRouteDist - routeDistance;
 
-                /*
-                 * До 2 тайлов погрешности — достаточно похоже на прямую линию.
-                 */
-                if (deviation >= 0f && deviation <= 2f)
+                if (deviation >= 0f && deviation <= 3.5f)
                 {
-                    candidates.Add(tile);
+                    candidates.Add(candidate);
                 }
             }
 
             if (candidates.Count == 0)
             {
-                Log.Warning("[Signal Interceptor] Could not find shuttle route tile between settlements. Falling back to default site tile.");
+                Log.Warning("[Signal Interceptor] Could not find shuttle route tile between settlements. Faction=" +
+                            faction.Name +
+                            " | Origin=" + origin.LabelCap +
+                            " | Destination=" + destination.LabelCap +
+                            ". Falling back to default site tile.");
+
                 return false;
             }
 
             resultTile = candidates.RandomElement();
 
             Log.Message("[Signal Interceptor] Shuttle route tile selected. " +
-                        "Origin: " + origin.LabelCap +
+                        "Faction: " + faction.Name +
+                        " | Origin: " + origin.LabelCap +
                         " | Destination: " + destination.LabelCap +
                         " | Route distance: " + routeDistance +
                         " | Candidates: " + candidates.Count +
@@ -308,16 +451,54 @@ namespace SignalInterceptor
             if (!tile.Valid)
                 return false;
 
-            if (Find.WorldGrid[tile].WaterCovered)
-                return false;
+            try
+            {
+                if (Find.WorldGrid[tile].WaterCovered)
+                    return false;
 
-            if (Find.WorldGrid[tile].hilliness == Hilliness.Impassable)
-                return false;
+                if (Find.WorldGrid[tile].hilliness == Hilliness.Impassable)
+                    return false;
 
-            if (Find.WorldObjects.ObjectsAt(tile).Any())
+                if (Find.WorldObjects.ObjectsAt(tile).Any())
+                    return false;
+            }
+            catch
+            {
                 return false;
+            }
 
             return true;
+        }
+
+        private string GenerateShuttleQuestName()
+        {
+            List<string> adjectives = GetTranslatedStringList(
+                "SI_Shuttle_QuestAdjectives",
+                new List<string>
+                {
+                    "Аварийная",
+                    "Сорванная",
+                    "Вынужденная",
+                    "Обесточенная",
+                    "Потерянная",
+                    "Слепая"
+                }
+            );
+
+            List<string> nouns = GetTranslatedStringList(
+                "SI_Shuttle_QuestNouns",
+                new List<string>
+                {
+                    "Посадка",
+                    "Стоянка",
+                    "Дозаправка",
+                    "Эвакуация",
+                    "Остановка",
+                    "Посадочная зона"
+                }
+            );
+
+            return adjectives.RandomElement() + " " + nouns.RandomElement();
         }
 
         private string GenerateMechanitorSignalQuestName()
@@ -427,31 +608,6 @@ namespace SignalInterceptor
             return fallback;
         }
 
-        private VIPSubtype ChooseSubtype(Faction faction)
-        {
-            List<VIPSubtype> available = new List<VIPSubtype>();
-
-            if (faction.def.techLevel >= TechLevel.Industrial)
-                available.Add(VIPSubtype.ShuttleVIP);
-
-            if (ModsConfig.RoyaltyActive)
-                available.Add(VIPSubtype.PsycasterVIP);
-
-            if (ModsConfig.BiotechActive)
-                available.Add(VIPSubtype.MechanitorSignalVIP);
-
-            if (ModsConfig.IdeologyActive)
-                available.Add(VIPSubtype.PilgrimVIP);
-
-            if (ModsConfig.AnomalyActive)
-                available.Add(VIPSubtype.DoppelgangerVIP);
-
-            if (available.Count == 0)
-                available.Add(VIPSubtype.ShuttleVIP);
-
-            return available.RandomElement();
-        }
-
         private SitePartDef GetSitePartDef(VIPSubtype subtype)
         {
             switch (subtype)
@@ -477,7 +633,7 @@ namespace SignalInterceptor
             switch (subtype)
             {
                 case VIPSubtype.ShuttleVIP:
-                    baseThreat = Rand.Range(450f, 4200f);
+                    baseThreat = Rand.Range(450f, 5200f);
                     break;
 
                 case VIPSubtype.PsycasterVIP:
@@ -523,12 +679,42 @@ namespace SignalInterceptor
             return 1.0f;
         }
 
+        private int GetVIPTierForQuest(float points)
+        {
+            if (points >= 4500f) return 9;
+            if (points >= 3600f) return 8;
+            if (points >= 2800f) return 7;
+            if (points >= 2200f) return 6;
+            if (points >= 1700f) return 5;
+            if (points >= 1200f) return 4;
+            if (points >= 800f) return 3;
+            if (points >= 450f) return 2;
+            return 1;
+        }
+
+        private string GetShuttleSecurityDescription(int tier)
+        {
+            if (tier >= 9)
+                return "SI_ShuttleSecurityDesc5".Translate();
+
+            if (tier >= 7)
+                return "SI_ShuttleSecurityDesc4".Translate();
+
+            if (tier >= 5)
+                return "SI_ShuttleSecurityDesc3".Translate();
+
+            if (tier >= 3)
+                return "SI_ShuttleSecurityDesc2".Translate();
+
+            return "SI_ShuttleSecurityDesc1".Translate();
+        }
+
         private string GetQuestName(VIPSubtype subtype)
         {
             switch (subtype)
             {
                 case VIPSubtype.ShuttleVIP:
-                    return "SI_VIP_Name_Shuttle".Translate();
+                    return GenerateShuttleQuestName();
 
                 case VIPSubtype.PsycasterVIP:
                     return "SI_VIP_Name_Psycaster".Translate();
@@ -576,7 +762,8 @@ namespace SignalInterceptor
             string workerName,
             string coloredFaction,
             string originSettlement,
-            string destinationSettlement)
+            string destinationSettlement,
+            string shuttleSecurityDesc)
         {
             switch (subtype)
             {
@@ -586,7 +773,8 @@ namespace SignalInterceptor
                         workerName,
                         coloredFaction,
                         originSettlement,
-                        destinationSettlement
+                        destinationSettlement,
+                        shuttleSecurityDesc
                     );
 
                 case VIPSubtype.PsycasterVIP:
@@ -616,6 +804,19 @@ namespace SignalInterceptor
         {
             string colorHex = ColorUtility.ToHtmlStringRGB(faction.Color);
             return "<color=#" + colorHex + ">" + faction.Name + "</color>";
+        }
+
+        private string SettlementColored(Settlement settlement)
+        {
+            if (settlement == null)
+                return "";
+
+            Faction faction = settlement.Faction;
+            if (faction == null)
+                return settlement.LabelCap.ToString();
+
+            string colorHex = ColorUtility.ToHtmlStringRGB(faction.Color);
+            return "<color=#" + colorHex + ">" + settlement.LabelCap + "</color>";
         }
     }
 }

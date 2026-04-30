@@ -11,7 +11,6 @@ namespace SignalInterceptor
     {
         private void SpawnShuttleVIP(Map map, VIPSiteData data)
         {
-            // Ищем шаттл, который уже заспавнил GenStep
             Thing shuttle = map.listerThings.AllThings
                 .FirstOrDefault(t => t.def.defName == "ShuttleCrashed" || t.def.defName == "Shuttle");
 
@@ -24,11 +23,11 @@ namespace SignalInterceptor
             }
             else
             {
-                // Фоллбэк — если шаттла почему-то нет
                 vipSpot = map.Center;
                 CellFinder.TryFindRandomCellNear(map.Center, map, 10,
                     (IntVec3 c) => c.Standable(map) && c.GetFirstPawn(map) == null,
                     out vipSpot);
+
                 Log.Warning("[Signal Interceptor] No shuttle found on map, spawning VIP at center.");
             }
 
@@ -48,13 +47,14 @@ namespace SignalInterceptor
             Pawn vip = PawnGenerator.GeneratePawn(vipRequest);
             if (vip == null) return;
 
-            BoostPawnSkills(vip);
-            AddImplantsToVIP(vip, data.threatPoints);
-            GiveVIPGear(vip);
+            int tier = GetVIPTier(data.threatPoints);
+
+            BoostPawnSkills(vip, tier);
+            AddImplantsToVIP(vip, tier);
+            GiveVIPGear(vip, tier);
 
             GenSpawn.Spawn(vip, vipSpot, map);
 
-            // Присоединяем VIP к существующему лорду обороны, или создаём нового
             IntVec3 defendPoint = shuttle?.Position ?? map.Center;
             Lord existingLord = map.lordManager.lords
                 .FirstOrDefault(l => l.faction == vipFaction);
@@ -77,10 +77,14 @@ namespace SignalInterceptor
                 new LookTargets(vip)
             );
 
-            Log.Message("[Signal Interceptor] Shuttle VIP spawned: " + vip.LabelShort + " at " + vipSpot);
+            Log.Message("[Signal Interceptor] Shuttle VIP spawned: " +
+                        vip.LabelShort +
+                        " | Tier: " + tier +
+                        " | Threat: " + data.threatPoints +
+                        " | Position: " + vipSpot);
         }
 
-        private void GiveVIPGear(Pawn vip)
+        private void GiveVIPGear(Pawn vip, int tier)
         {
             if (vip.apparel == null) return;
 
@@ -94,17 +98,24 @@ namespace SignalInterceptor
                 }
             }
 
-            ThingDef prestigeRobe = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_RobeRoyal");
-            if (prestigeRobe == null)
-                prestigeRobe = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_PrestigeRobe");
-            if (prestigeRobe == null)
-                prestigeRobe = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_Cape");
+            ThingDef robeDef = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_RobeRoyal");
+            if (robeDef == null)
+                robeDef = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_PrestigeRobe");
+            if (robeDef == null)
+                robeDef = DefDatabase<ThingDef>.GetNamedSilentFail("Apparel_Cape");
 
-            if (prestigeRobe != null)
+            if (robeDef != null)
             {
-                ThingDef stuff = GenStuff.DefaultStuffFor(prestigeRobe);
-                Thing robe = ThingMaker.MakeThing(prestigeRobe, stuff);
-                robe.TryGetComp<CompQuality>()?.SetQuality(QualityCategory.Excellent, ArtGenerationContext.Outsider);
+                ThingDef stuff = GenStuff.DefaultStuffFor(robeDef);
+                Thing robe = ThingMaker.MakeThing(robeDef, stuff);
+
+                QualityCategory quality = QualityCategory.Good;
+                if (tier >= 3) quality = QualityCategory.Excellent;
+                if (tier >= 5) quality = QualityCategory.Masterwork;
+                if (tier >= 8) quality = QualityCategory.Legendary;
+
+                robe.TryGetComp<CompQuality>()?.SetQuality(quality, ArtGenerationContext.Outsider);
+
                 if (robe is Apparel robeApparel)
                 {
                     vip.apparel.Wear(robeApparel, dropReplacedApparel: true);
@@ -112,87 +123,181 @@ namespace SignalInterceptor
             }
         }
 
-        private void BoostPawnSkills(Pawn pawn)
+        private void BoostPawnSkills(Pawn pawn, int tier)
         {
             if (pawn.skills == null) return;
 
-            var allSkills = pawn.skills.skills.Where(s => !s.TotallyDisabled).ToList();
-            int boostCount = Rand.RangeInclusive(3, 5);
+            List<SkillRecord> availableSkills = pawn.skills.skills
+                .Where(s => !s.TotallyDisabled)
+                .ToList();
 
-            for (int i = 0; i < boostCount && allSkills.Count > 0; i++)
+            if (availableSkills.Count == 0)
+                return;
+
+            int boostCount;
+            int minLevel;
+            int maxLevel;
+            float passionChance;
+            float majorPassionChance;
+
+            if (tier >= 9)
             {
-                var skill = allSkills.RandomElement();
-                allSkills.Remove(skill);
+                boostCount = Rand.RangeInclusive(8, 10);
+                minLevel = 17;
+                maxLevel = 20;
+                passionChance = 0.90f;
+                majorPassionChance = 0.70f;
+            }
+            else if (tier >= 7)
+            {
+                boostCount = Rand.RangeInclusive(6, 8);
+                minLevel = 15;
+                maxLevel = 20;
+                passionChance = 0.75f;
+                majorPassionChance = 0.55f;
+            }
+            else if (tier >= 5)
+            {
+                boostCount = Rand.RangeInclusive(5, 7);
+                minLevel = 13;
+                maxLevel = 18;
+                passionChance = 0.60f;
+                majorPassionChance = 0.40f;
+            }
+            else if (tier >= 3)
+            {
+                boostCount = Rand.RangeInclusive(4, 6);
+                minLevel = 11;
+                maxLevel = 16;
+                passionChance = 0.45f;
+                majorPassionChance = 0.25f;
+            }
+            else
+            {
+                boostCount = Rand.RangeInclusive(3, 4);
+                minLevel = 9;
+                maxLevel = 14;
+                passionChance = 0.30f;
+                majorPassionChance = 0.15f;
+            }
 
-                int targetLevel = Rand.RangeInclusive(12, 20);
+            for (int i = 0; i < boostCount && availableSkills.Count > 0; i++)
+            {
+                SkillRecord skill = availableSkills.RandomElement();
+                availableSkills.Remove(skill);
+
+                int targetLevel = Rand.RangeInclusive(minLevel, maxLevel);
                 if (skill.Level < targetLevel)
                 {
                     skill.Level = targetLevel;
                 }
 
-                if (Rand.Chance(0.4f))
+                if (Rand.Chance(passionChance))
                 {
-                    skill.passion = Rand.Chance(0.3f) ? Passion.Major : Passion.Minor;
+                    skill.passion = Rand.Chance(majorPassionChance) ? Passion.Major : Passion.Minor;
                 }
             }
         }
 
-        private void AddImplantsToVIP(Pawn pawn, float threatPoints)
+        private void AddImplantsToVIP(Pawn pawn, int tier)
         {
-            if (pawn.health?.hediffSet == null) return;
+            if (pawn.health?.hediffSet == null)
+                return;
 
             int implantCount;
-            if (threatPoints >= 2000f) implantCount = Rand.RangeInclusive(4, 6);
-            else if (threatPoints >= 1200f) implantCount = Rand.RangeInclusive(2, 4);
-            else implantCount = Rand.RangeInclusive(1, 2);
 
-            var validParts = pawn.RaceProps.body.AllParts
-                .Where(p => p.def.tags != null && p.def.tags.Any())
+            if (tier >= 9)
+                implantCount = Rand.RangeInclusive(8, 10);
+            else if (tier >= 7)
+                implantCount = Rand.RangeInclusive(6, 8);
+            else if (tier >= 5)
+                implantCount = Rand.RangeInclusive(4, 6);
+            else if (tier >= 3)
+                implantCount = Rand.RangeInclusive(2, 4);
+            else
+                implantCount = Rand.RangeInclusive(1, 2);
+
+            List<ThingDef> implantThings = DefDatabase<ThingDef>.AllDefs
+                .Where(d => d.isTechHediff
+                         && d.techHediffsTags != null
+                         && d.techHediffsTags.Contains("Advanced"))
                 .ToList();
 
-            for (int i = 0; i < implantCount && validParts.Count > 0; i++)
+            if (implantThings.Count == 0)
+                return;
+
+            for (int i = 0; i < implantCount; i++)
             {
-                ThingDef implantThing = DefDatabase<ThingDef>.AllDefs
-                    .Where(d => d.isTechHediff
-                             && d.techHediffsTags != null
-                             && d.techHediffsTags.Contains("Advanced"))
+                ThingDef implantThing = implantThings.RandomElementWithFallback(null);
+                if (implantThing == null)
+                    continue;
+
+                RecipeDef recipe = DefDatabase<RecipeDef>.AllDefs
+                    .FirstOrDefault(r => r.addsHediff != null
+                                      && r.addsHediff.spawnThingOnRemoved == implantThing
+                                      && r.appliedOnFixedBodyParts != null
+                                      && r.appliedOnFixedBodyParts.Any());
+
+                if (recipe == null)
+                    continue;
+
+                BodyPartRecord targetPart = recipe.appliedOnFixedBodyParts
+                    .SelectMany(bpd => pawn.RaceProps.body.AllParts.Where(p => p.def == bpd))
+                    .Where(p => !pawn.health.hediffSet.HasDirectlyAddedPartFor(p))
                     .RandomElementWithFallback(null);
 
-                if (implantThing != null)
+                if (targetPart == null)
+                    continue;
+
+                pawn.health.AddHediff(recipe.addsHediff, targetPart);
+            }
+
+            TryAddSpecialVIPImplants(pawn, tier);
+        }
+
+        private void TryAddSpecialVIPImplants(Pawn pawn, int tier)
+        {
+            if (pawn == null || pawn.health?.hediffSet == null)
+                return;
+
+            BodyPartRecord brain = pawn.RaceProps.body.AllParts
+                .FirstOrDefault(p => p.def.defName == "Brain");
+
+            if (brain == null)
+                return;
+
+            if (pawn.health.hediffSet.HasDirectlyAddedPartFor(brain))
+                return;
+
+            if (tier >= 9 && Rand.Chance(0.65f))
+            {
+                HediffDef specialBrain = DefDatabase<HediffDef>.GetNamedSilentFail("ArchotechBrainImplant");
+                if (specialBrain == null)
+                    specialBrain = DefDatabase<HediffDef>.GetNamedSilentFail("ArchobraineImplant");
+
+                if (specialBrain != null)
                 {
-                    var recipe = DefDatabase<RecipeDef>.AllDefs
-                        .FirstOrDefault(r => r.addsHediff != null
-                                          && r.addsHediff.spawnThingOnRemoved == implantThing
-                                          && r.appliedOnFixedBodyParts?.Any() == true);
-
-                    if (recipe != null)
-                    {
-                        var targetPart = recipe.appliedOnFixedBodyParts
-                            .SelectMany(bpd => pawn.RaceProps.body.AllParts.Where(p => p.def == bpd))
-                            .Where(p => !pawn.health.hediffSet.HasDirectlyAddedPartFor(p))
-                            .RandomElementWithFallback(null);
-
-                        if (targetPart != null)
-                        {
-                            pawn.health.AddHediff(recipe.addsHediff, targetPart);
-                        }
-                    }
+                    pawn.health.AddHediff(specialBrain, brain);
+                    return;
                 }
             }
 
-            if (threatPoints >= 1800f && Rand.Chance(0.25f))
+            if (tier >= 7 && Rand.Chance(0.45f))
             {
-                HediffDef archoBrain = DefDatabase<HediffDef>.GetNamedSilentFail("ArchobraineImplant");
-                if (archoBrain == null)
-                    archoBrain = DefDatabase<HediffDef>.GetNamedSilentFail("Psychic amplifier");
-
-                if (archoBrain != null)
+                HediffDef learningAssistant = DefDatabase<HediffDef>.GetNamedSilentFail("LearningAssistant");
+                if (learningAssistant != null)
                 {
-                    var brain = pawn.RaceProps.body.AllParts.FirstOrDefault(p => p.def.defName == "Brain");
-                    if (brain != null && !pawn.health.hediffSet.HasDirectlyAddedPartFor(brain))
-                    {
-                        pawn.health.AddHediff(archoBrain, brain);
-                    }
+                    pawn.health.AddHediff(learningAssistant, brain);
+                    return;
+                }
+            }
+
+            if (tier >= 5 && Rand.Chance(0.25f))
+            {
+                HediffDef neurocalculator = DefDatabase<HediffDef>.GetNamedSilentFail("Neurocalculator");
+                if (neurocalculator != null)
+                {
+                    pawn.health.AddHediff(neurocalculator, brain);
                 }
             }
         }

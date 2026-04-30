@@ -2,11 +2,18 @@
 <LanguageData>
   <SecretStash.label>охрана тайника</SecretStash.label>
   <SecretStash.description>Скрытый склад ресурсов, охраняемый вооружённым отрядом.</SecretStash.description>
+  <SecretStash.approachOrderString>Атаковать охраняемый тайник</SecretStash.approachOrderString>
+  <SecretStash.approachingReportString>Приближение к охраняемому тайнику</SecretStash.approachingReportString>
 
   <DoppelgangerCamp.label>лагерь двойников</DoppelgangerCamp.label>
   <DoppelgangerCamp.description>Лагерь идентичных враждебных бойцов.</DoppelgangerCamp.description>
   <DoppelgangerCamp.approachOrderString>Атаковать лагерь двойников</DoppelgangerCamp.approachOrderString>
   <DoppelgangerCamp.approachingReportString>Приближение к лагерю двойников</DoppelgangerCamp.approachingReportString>
+
+  <SI_ShuttleVIPSite.label>импровизированная посадочная площадка шаттла</SI_ShuttleVIPSite.label>
+  <SI_ShuttleVIPSite.description>Временная посадочная площадка с застрявшим шаттлом, VIP-пассажиром и вооружённой охраной.</SI_ShuttleVIPSite.description>
+  <SI_ShuttleVIPSite.approachOrderString>Совершить налёт на посадочную площадку шаттла</SI_ShuttleVIPSite.approachOrderString>
+  <SI_ShuttleVIPSite.approachingReportString>Приближение к посадочной площадке шаттла</SI_ShuttleVIPSite.approachingReportString>
 
   <VIPCapture.label>эскорт VIP'а</VIPCapture.label>
   <VIPCapture.description>Ценная цель с вооружённым эскортом, ожидающая эвакуации.</VIPCapture.description>

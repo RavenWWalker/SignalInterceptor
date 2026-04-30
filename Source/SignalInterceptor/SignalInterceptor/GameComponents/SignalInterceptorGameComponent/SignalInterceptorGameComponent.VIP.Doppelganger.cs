@@ -109,7 +109,7 @@ namespace SignalInterceptor
                 template.ageTracker.AgeChronologicalTicks = 25 * 3600000L;
             }
 
-            BoostPawnSkills(template);
+            BoostPawnSkills(template, GetVIPTier(data.threatPoints));
 
             IntVec3 baseCenter = map.Center;
 

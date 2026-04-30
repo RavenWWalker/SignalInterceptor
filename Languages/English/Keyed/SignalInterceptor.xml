@@ -123,18 +123,18 @@
   <SI_VIP_Name_Doppelganger>Crowd of Doubles</SI_VIP_Name_Doppelganger>
 
   <!-- VIP Site Labels -->
-  <SI_VIP_Site_Shuttle>Shuttle landing pad</SI_VIP_Site_Shuttle>
+  <SI_VIP_Site_Shuttle>Improvised shuttle landing pad</SI_VIP_Site_Shuttle>
   <SI_VIP_Site_Psycaster>Anomalous signal source</SI_VIP_Site_Psycaster>
   <SI_VIP_Site_Mechanitor>Mechanoid signal source</SI_VIP_Site_Mechanitor>
   <SI_VIP_Site_Pilgrim>Pilgrim campsite</SI_VIP_Site_Pilgrim>
   <SI_VIP_Site_Doppelganger>Doppelganger camp</SI_VIP_Site_Doppelganger>
 
   <!-- VIP Quest Descriptions -->
-  <SI_VIP_Desc_Shuttle>{0} intercepted a conversation between two shuttle pilots. They discussed that {1} had sent a highly valuable individual with exceptional skills by shuttle from the settlement of {2} to the settlement of {3}. However, during the flight, a solar flare occurred, forcing the shuttle to make an emergency landing at an improvised parking lot in need of maintenance and additional chemical fuel.\n\nYou can raid the temporary landing site to capture the VIP as a prisoner. Be warned — this will make {1} hostile if they are not already.\n\nThe VIP shuttle will depart once fuel is delivered and repairs are complete.</SI_VIP_Desc_Shuttle>
+  <SI_VIP_Desc_Shuttle>{0} intercepted a conversation between two shuttle pilots. They discussed that {1} had sent a highly valuable individual with exceptional skills by shuttle from the settlement of {2} to the settlement of {3}. During the flight, the route was struck by a solar flare: navigation failed, several systems entered emergency mode, and the shuttle was forced to land at an improvised service pad for diagnostics and repairs.\n\nYou can raid the temporary landing site to capture the VIP as a prisoner. Be warned — this will make {1} hostile if they are not already.\n\n{4}\n\nThe VIP shuttle will depart once the crew restores the systems and completes repairs.</SI_VIP_Desc_Shuttle>
   <SI_VIP_Desc_Psycaster>{0} intercepted a strange signal signature through the comms console. The source is constantly moving and its wavelength is unstable. Triangulation revealed an approximate location, but the trail will soon go cold.\n\nInvestigation may reveal a powerful psycaster. Approach with extreme caution.</SI_VIP_Desc_Psycaster>
   <SI_VIP_Desc_Mechanitor>{0} detected an unusual pattern in mechanoid radio chatter — something almost... human. The source is surrounded by mechanoids and constantly moving. Act fast before the signal is lost.\n\nExpect heavy mechanoid resistance.</SI_VIP_Desc_Mechanitor>
   <SI_VIP_Desc_Pilgrim>{0} intercepted chatter about {1}'s pilgrimage season. A particularly capable pilgrim carrying a sacred relic has stopped to rest. The pilgrim is accompanied by tamed beasts.\n\nCapturing or killing the pilgrim will make {1} hostile.</SI_VIP_Desc_Pilgrim>
-  <SI_VIP_Desc_Doppelganger>{0} overheard two settlers discussing a crowd of identical, heavily armed strangers heading in an unknown direction. Their exact coordinates were mentioned in a military briefing. The doppelgangers have made camp, but they will move on soon.\n\nExpect fierce resistance from 10-12 identical combatants.</SI_VIP_Desc_Doppelganger>
+  <SI_VIP_Desc_Doppelganger>{0} overheard two settlers discussing a crowd of identical, heavily armed strangers heading in an unknown direction. Their exact coordinates were mentioned in a military briefing. The doppelgangers have made camp, but they will move on soon.\n\nExpect fierce resistance from 10-15 identical combatants.</SI_VIP_Desc_Doppelganger>
 
   <SI_Doppelganger_Title>Doppelganger convoy</SI_Doppelganger_Title>
   <SI_Doppelganger_Text>Intercepted coordinates reveal a convoy of {0} identical armed combatants from {1}. They all look exactly alike — clones of the same person. Their bodies are unstable and fragile, but they are numerous and well-armed.</SI_Doppelganger_Text>
@@ -181,5 +181,20 @@
 
   <SI_MechanitorSignal_CompletedText>The hostile mechanitor node has been suppressed. The mechanoids no longer answer the outgoing signal, and the battlefield slowly falls silent.</SI_MechanitorSignal_CompletedText>
   <SI_MechanitorSignal_FailedFledText>You left the interception zone without suppressing the signal source. The mechanitor has moved on with his swarm, and the trail is lost.</SI_MechanitorSignal_FailedFledText>
+
+  <!-- Grounded shuttle quest names -->
+  <SI_Shuttle_QuestAdjectives>Emergency|Broken|Forced|Powerless|Lost|Blind</SI_Shuttle_QuestAdjectives>
+  <SI_Shuttle_QuestNouns>Landing|Stopover|Refueling|Evacuation|Holdover|Landing Zone</SI_Shuttle_QuestNouns>
+
+  <!-- Shuttle text fallbacks -->
+  <SI_ShuttleUnknownOrigin>an unknown settlement</SI_ShuttleUnknownOrigin>
+  <SI_ShuttleUnknownDestination>another settlement</SI_ShuttleUnknownDestination>
+
+  <!-- Shuttle difficulty descriptions -->
+  <SI_ShuttleSecurityDesc1>Radio chatter suggests limited security: a few escorts and minimal heavy equipment.</SI_ShuttleSecurityDesc1>
+  <SI_ShuttleSecurityDesc2>Intercepted messages indicate a proper armed escort team. Expect organized resistance.</SI_ShuttleSecurityDesc2>
+  <SI_ShuttleSecurityDesc3>The VIP is protected by a reinforced detail with solid equipment and training. Attacking without a plan may be costly.</SI_ShuttleSecurityDesc3>
+  <SI_ShuttleSecurityDesc4>According to the pilots, the landing pad is guarded by elite security and several reserve combat teams. This is an extremely dangerous target.</SI_ShuttleSecurityDesc4>
+  <SI_ShuttleSecurityDesc5>The transmission describes the VIP as an asset of exceptional importance. They are protected by a hand-picked guard force with the best equipment available. Expect maximum resistance.</SI_ShuttleSecurityDesc5>
 
 </LanguageData>
