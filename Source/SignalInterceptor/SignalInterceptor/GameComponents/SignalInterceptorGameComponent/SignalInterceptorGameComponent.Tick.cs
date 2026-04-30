@@ -7,6 +7,7 @@ namespace SignalInterceptor
         public override void GameComponentTick()
         {
             TickDoppelgangerSettlementCleanup();
+            TickRogueMechanitorSettlementCleanup();
 
             TickVIPSites();
 

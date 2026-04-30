@@ -281,6 +281,7 @@ namespace SignalInterceptor
                 }
             }
 
+            CleanupRogueMechanitorSettlements();
             Log.Message("[Signal Interceptor] Created rogue mechanitor faction: " +
                         generatorFaction.Name +
                         " | def=" + generatorFaction.def.defName +
@@ -1960,7 +1961,8 @@ namespace SignalInterceptor
         {
             List<Settlement> settlements = Find.WorldObjects.AllWorldObjects
                 .OfType<Settlement>()
-                .Where(s => s.Faction != null
+                .Where(s => s != null
+                         && s.Faction != null
                          && IsRogueMechanitorFactionDef(s.Faction.def))
                 .ToList();
 
@@ -1974,6 +1976,14 @@ namespace SignalInterceptor
 
                 Find.WorldObjects.Remove(settlement);
             }
+        }
+
+        private void TickRogueMechanitorSettlementCleanup()
+        {
+            if (Find.TickManager.TicksGame % 250 != 0)
+                return;
+
+            CleanupRogueMechanitorSettlements();
         }
 
         private XenotypeDef ChooseRogueMechanitorXenotype()
