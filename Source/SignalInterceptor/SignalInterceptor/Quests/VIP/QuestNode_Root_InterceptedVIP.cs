@@ -350,101 +350,93 @@ namespace SignalInterceptor
             if (playerMap == null || faction == null)
                 return false;
 
-            PlanetTile playerTile = playerMap.Tile;
-
-            List<Settlement> settlements = GetValidShuttleSettlements(faction, playerMap)
-                .OrderBy(s => Find.WorldGrid.ApproxDistanceInTiles(playerTile, s.Tile))
-                .Take(2)
-                .ToList();
+            List<Settlement> settlements = GetValidShuttleSettlements(faction, playerMap);
 
             if (settlements.Count < 2)
-            {
-                Log.Warning("[Signal Interceptor] Shuttle route failed: faction has fewer than 2 valid ground settlements. Faction=" +
-                            (faction.Name ?? "null"));
                 return false;
-            }
 
             origin = settlements[0];
             destination = settlements[1];
 
-            if (!IsValidDistancePair(origin.Tile, destination.Tile))
-            {
-                Log.Warning("[Signal Interceptor] Shuttle route failed: origin and destination are not valid distance pair.");
-                return false;
-            }
+            /*
+             * ВАЖНО:
+             * origin и destination — out-параметры.
+             * Их нельзя использовать внутри lambda / OrderBy / Where.
+             * Поэтому копируем нужные значения в обычные локальные переменные.
+             */
+            PlanetTile originTile = origin.Tile;
+            PlanetTile destinationTile = destination.Tile;
+            string originLabel = origin.LabelCap;
+            string destinationLabel = destination.LabelCap;
 
-            float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(origin.Tile, destination.Tile);
+            float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(originTile, destinationTile);
 
             if (routeDistance <= 0f)
                 return false;
 
+            const int attempts = 1500;
+            const int minDist = 4;
+            const int maxDist = 250;
+            const float maxDeviation = 6f;
+
             List<PlanetTile> candidates = new List<PlanetTile>();
 
-            /*
-             * Не перебираем new PlanetTile(i).
-             * В RimWorld 1.6 есть слои планеты, и такой перебор может создать
-             * тайлы с неверным ID для текущего слоя.
-             *
-             * Вместо этого просим RimWorld подобрать валидные site-тайлы
-             * и фильтруем их по близости к маршруту.
-             */
-            for (int attempt = 0; attempt < 300; attempt++)
+            for (int i = 0; i < attempts; i++)
             {
-                PlanetTile candidate;
-
-                if (!TileFinder.TryFindNewSiteTile(out candidate, minDist: 4, maxDist: 60, allowCaravans: false))
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist, maxDist))
                     continue;
 
-                if (!IsValidSiteTile(candidate))
+                if (!IsValidSiteTile(tile))
                     continue;
 
-                if (candidate.LayerDef != origin.Tile.LayerDef)
-                    continue;
-
-                if (!IsValidDistancePair(origin.Tile, candidate))
-                    continue;
-
-                if (!IsValidDistancePair(candidate, destination.Tile))
-                    continue;
-
-                float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(origin.Tile, candidate);
-                float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(candidate, destination.Tile);
+                float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(originTile, tile);
+                float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destinationTile);
 
                 if (distFromOrigin < 3f || distToDestination < 3f)
                     continue;
 
-                float totalRouteDist = distFromOrigin + distToDestination;
-                float deviation = totalRouteDist - routeDistance;
+                float totalDistance = distFromOrigin + distToDestination;
+                float deviation = totalDistance - routeDistance;
 
-                if (deviation >= 0f && deviation <= 3.5f)
-                {
-                    candidates.Add(candidate);
-                }
+                if (deviation < 0f || deviation > maxDeviation)
+                    continue;
+
+                candidates.Add(tile);
             }
 
             if (candidates.Count == 0)
             {
-                Log.Warning("[Signal Interceptor] Could not find shuttle route tile between settlements. Faction=" +
-                            faction.Name +
-                            " | Origin=" + origin.LabelCap +
-                            " | Destination=" + destination.LabelCap +
-                            ". Falling back to default site tile.");
+                Log.Message("[Signal Interceptor] Shuttle route tile not found between " +
+                            originLabel + " and " + destinationLabel +
+                            ". Shuttle VIP subtype will be skipped.");
 
+                resultTile = PlanetTile.Invalid;
                 return false;
             }
 
-            resultTile = candidates.RandomElement();
+            resultTile = candidates
+                .OrderBy(tile =>
+                {
+                    float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(originTile, tile);
+                    float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destinationTile);
+                    float totalDistance = distFromOrigin + distToDestination;
+                    float deviation = Mathf.Abs(totalDistance - routeDistance);
+                    float balance = Mathf.Abs(distFromOrigin - distToDestination);
+
+                    return deviation * 10f + balance;
+                })
+                .First();
 
             Log.Message("[Signal Interceptor] Shuttle route tile selected. " +
-                        "Faction: " + faction.Name +
-                        " | Origin: " + origin.LabelCap +
-                        " | Destination: " + destination.LabelCap +
+                        "Origin: " + originLabel +
+                        " | Destination: " + destinationLabel +
                         " | Route distance: " + routeDistance +
                         " | Candidates: " + candidates.Count +
                         " | Tile: " + resultTile);
 
             return true;
         }
+
 
         private bool IsValidSiteTile(PlanetTile tile)
         {
