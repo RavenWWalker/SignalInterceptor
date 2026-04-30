@@ -59,7 +59,7 @@ namespace SignalInterceptor
             // ВАЖНО:
             // Механоидов больше НЕ помещаем в LordJob_AssaultColony.
             // Иначе ванильный Lord всё равно может объявить отступление после потерь.
-            StartMechanitorAssaultLord(map, signalFaction, mechs);
+            StartMechanitorMechanoidHunt(map, signalFaction, mechs);
 
             // Механитор отдельно держится рядом с лагерем/мехами.
             StartMechanitorGuardLord(map, signalFaction, center, mechanitor);
@@ -577,11 +577,11 @@ namespace SignalInterceptor
                     break;
             }
 
-            AddOrSetLevelHediffToPawn(pawn, "ControlSublinkImplant", controlSublinkLevel);
-            AddOrSetLevelHediffToPawn(pawn, "RemoteRepairerImplant", remoteRepairerLevel);
-            AddOrSetLevelHediffToPawn(pawn, "MechFormfeederImplant", gestationProcessorLevel);
-            AddOrSetLevelHediffToPawn(pawn, "RemoteShielderImplant", remoteShielderLevel);
-            AddOrSetLevelHediffToPawn(pawn, "RepairProbeImplant", repairProbeLevel);
+            AddStackedHediffsToPawn(pawn, "ControlSublinkImplant", controlSublinkLevel);
+            AddStackedHediffsToPawn(pawn, "RemoteRepairerImplant", remoteRepairerLevel);
+            AddStackedHediffsToPawn(pawn, "MechFormfeederImplant", gestationProcessorLevel);
+            AddStackedHediffsToPawn(pawn, "RemoteShielderImplant", remoteShielderLevel);
+            AddStackedHediffsToPawn(pawn, "RepairProbeImplant", repairProbeLevel);
 
             // Не механиторские, но боевые/защитные импланты для выживаемости.
             if (tier >= 4)
@@ -626,6 +626,63 @@ namespace SignalInterceptor
                         " | GestationProcessor=" + gestationProcessorLevel +
                         " | RemoteShielder=" + remoteShielderLevel +
                         " | RepairProbe=" + repairProbeLevel);
+        }
+
+        private bool AddStackedHediffsToPawn(Pawn pawn, string defName, int count)
+        {
+            if (pawn?.health?.hediffSet == null)
+                return false;
+
+            if (defName.NullOrEmpty())
+                return false;
+
+            if (count <= 0)
+                return true;
+
+            HediffDef hediffDef = DefDatabase<HediffDef>.GetNamedSilentFail(defName);
+
+            if (hediffDef == null)
+            {
+                Log.Warning("[Signal Interceptor] HediffDef not found: " + defName);
+                return false;
+            }
+
+            try
+            {
+                List<Hediff> existing = pawn.health.hediffSet.hediffs
+                    .Where(h => h != null && h.def == hediffDef)
+                    .ToList();
+
+                foreach (Hediff hediff in existing)
+                {
+                    pawn.health.RemoveHediff(hediff);
+                }
+
+                BodyPartRecord part = FindBestBodyPartForHediff(pawn, hediffDef);
+
+                for (int i = 0; i < count; i++)
+                {
+                    Hediff hediff = HediffMaker.MakeHediff(hediffDef, pawn, part);
+                    pawn.health.AddHediff(hediff, part);
+                }
+
+                Log.Message("[Signal Interceptor] Added stacked hediffs. Pawn=" +
+                            pawn.LabelShort +
+                            " | Hediff=" + defName +
+                            " | Count=" + count);
+
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning("[Signal Interceptor] Failed to add stacked hediffs. Pawn=" +
+                            pawn.LabelShort +
+                            " | Hediff=" + defName +
+                            " | Count=" + count +
+                            " | Exception=" + ex);
+
+                return false;
+            }
         }
 
         private void GiveRogueMechanitorGear(Pawn pawn, float threatPoints)

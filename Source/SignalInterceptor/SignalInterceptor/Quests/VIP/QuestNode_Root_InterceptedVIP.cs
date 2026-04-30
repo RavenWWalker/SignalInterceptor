@@ -224,7 +224,7 @@ namespace SignalInterceptor
                     null,
                     null,
                     QuestPart.SignalListenMode.OngoingOnly,
-                    sendStandardLetter: true
+                    sendStandardLetter: false
                 );
             }, mapRemovedSignal);
 
@@ -237,7 +237,7 @@ namespace SignalInterceptor
                     null,
                     null,
                     QuestPart.SignalListenMode.OngoingOnly,
-                    sendStandardLetter: true
+                    sendStandardLetter: false
                 );
             }, siteDestroyedSignal);
 

@@ -85,30 +85,144 @@ namespace SignalInterceptor
 
         private IntVec3 FindCampCenter(Map map)
         {
-            IntVec3 result = map.Center;
-            for (int attempt = 0; attempt < 100; attempt++)
+            for (int attempt = 0; attempt < 300; attempt++)
             {
                 IntVec3 candidate = CellFinder.RandomNotEdgeCell(30, map);
-                if (!candidate.Standable(map) || candidate.Roofed(map))
+
+                if (!IsDryStandableCell(map, candidate))
+                    continue;
+
+                if (candidate.Roofed(map))
                     continue;
 
                 bool areaOk = true;
+
                 for (int dx = -ClearRadius; dx <= ClearRadius && areaOk; dx += 4)
                 {
                     for (int dz = -ClearRadius; dz <= ClearRadius && areaOk; dz += 4)
                     {
                         IntVec3 check = candidate + new IntVec3(dx, 0, dz);
-                        if (!check.InBounds(map) || check.GetRoof(map) != null)
+
+                        if (!check.InBounds(map))
+                        {
                             areaOk = false;
+                            break;
+                        }
+
+                        if (check.GetRoof(map) != null)
+                        {
+                            areaOk = false;
+                            break;
+                        }
+
+                        if (IsWaterCell(map, check))
+                        {
+                            areaOk = false;
+                            break;
+                        }
                     }
                 }
-                if (areaOk)
+
+                if (!areaOk)
+                    continue;
+
+                if (!IsDryArea(map, candidate, ClearRadius, 3))
+                    continue;
+
+                return candidate;
+            }
+
+            Log.Warning("[Signal Interceptor] Shuttle VIP could not find fully dry camp center. Falling back to map center.");
+
+            if (IsDryStandableCell(map, map.Center))
+                return map.Center;
+
+            IntVec3 fallback;
+            if (CellFinder.TryFindRandomCell(
+                    map,
+                    c => c.InBounds(map)
+                      && !c.Roofed(map)
+                      && IsDryStandableCell(map, c),
+                    out fallback))
+            {
+                return fallback;
+            }
+
+            return map.Center;
+        }
+
+        private bool IsWaterCell(Map map, IntVec3 cell)
+        {
+            if (map == null || !cell.InBounds(map))
+                return true;
+
+            TerrainDef terrain = cell.GetTerrain(map);
+
+            if (terrain == null)
+                return true;
+
+            if (terrain.IsWater)
+                return true;
+
+            return false;
+        }
+
+        private bool IsDryStandableCell(Map map, IntVec3 cell)
+        {
+            if (map == null || !cell.InBounds(map))
+                return false;
+
+            if (IsWaterCell(map, cell))
+                return false;
+
+            if (!cell.Standable(map))
+                return false;
+
+            return true;
+        }
+
+        private bool IsDryArea(Map map, IntVec3 center, int radius, int step = 3)
+        {
+            if (map == null || !center.InBounds(map))
+                return false;
+
+            for (int dx = -radius; dx <= radius; dx += step)
+            {
+                for (int dz = -radius; dz <= radius; dz += step)
                 {
-                    result = candidate;
-                    break;
+                    IntVec3 cell = center + new IntVec3(dx, 0, dz);
+
+                    if (!cell.InBounds(map))
+                        return false;
+
+                    if (IsWaterCell(map, cell))
+                        return false;
                 }
             }
-            return result;
+
+            return true;
+        }
+
+        private bool IsDryRect(Map map, IntVec3 corner, int width, int height, int padding = 0)
+        {
+            if (map == null)
+                return false;
+
+            for (int dx = -padding; dx < width + padding; dx++)
+            {
+                for (int dz = -padding; dz < height + padding; dz++)
+                {
+                    IntVec3 cell = corner + new IntVec3(dx, 0, dz);
+
+                    if (!cell.InBounds(map))
+                        return false;
+
+                    if (IsWaterCell(map, cell))
+                        return false;
+                }
+            }
+
+            return true;
         }
 
         // ===================== РАСЧИСТКА =====================
@@ -153,7 +267,7 @@ namespace SignalInterceptor
                 for (int dz = -4; dz <= 4; dz++)
                 {
                     IntVec3 cell = center + new IntVec3(dx, 0, dz);
-                    if (cell.InBounds(map))
+                    if (cell.InBounds(map) && !IsWaterCell(map, cell))
                     {
                         map.terrainGrid.SetTerrain(cell, concrete);
                     }
@@ -169,8 +283,24 @@ namespace SignalInterceptor
 
             if (shuttleDef != null)
             {
-                Thing shuttle = ThingMaker.MakeThing(shuttleDef);
-                GenSpawn.Spawn(shuttle, center, map);
+                IntVec3 shuttleCell = center;
+
+                if (!IsDryStandableCell(map, shuttleCell))
+                {
+                    CellFinder.TryFindRandomCellNear(
+                        center,
+                        map,
+                        8,
+                        c => IsDryStandableCell(map, c) && c.GetFirstBuilding(map) == null,
+                        out shuttleCell
+                    );
+                }
+
+                if (shuttleCell.IsValid && IsDryStandableCell(map, shuttleCell))
+                {
+                    Thing shuttle = ThingMaker.MakeThing(shuttleDef);
+                    GenSpawn.Spawn(shuttle, shuttleCell, map);
+                }
             }
         }
 
@@ -209,6 +339,8 @@ namespace SignalInterceptor
 
                 IntVec3 farCorner = corner + new IntVec3(size.x + 2, 0, size.z + 2);
                 if (!corner.InBounds(map) || !farCorner.InBounds(map))
+                    continue;
+                if (!IsDryRect(map, corner, size.x, size.z, padding: 1))
                     continue;
 
                 int doorSide = GetDoorSide(corner, size.x, size.z, center);
@@ -273,6 +405,7 @@ namespace SignalInterceptor
                 {
                     IntVec3 cell = corner + new IntVec3(dx, 0, dz);
                     if (!cell.InBounds(map)) continue;
+                    if (IsWaterCell(map, cell)) continue;
 
                     List<Thing> blocking = cell.GetThingList(map)
                         .Where(t => t.def.category == ThingCategory.Plant
