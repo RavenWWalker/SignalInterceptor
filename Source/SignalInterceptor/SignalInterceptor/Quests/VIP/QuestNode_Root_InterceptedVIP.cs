@@ -713,6 +713,11 @@ namespace SignalInterceptor
                 if (distanceFromPlayer < minDistanceFromPlayer || distanceFromPlayer > maxDistanceFromPlayer)
                     continue;
 
+                float nearestSpecialSiteDistance = DistanceToNearestSignalInterceptorSpecialSite(tile, playerTile);
+
+                if (nearestSpecialSiteDistance >= 0f && nearestSpecialSiteDistance < 30f)
+                    continue;
+
                 float nearestSettlementDistance = DistanceToNearestSettlement(tile, playerTile);
 
                 if (nearestSettlementDistance >= 0f && nearestSettlementDistance < minSettlementDistance)
@@ -832,6 +837,11 @@ namespace SignalInterceptor
                 float distanceFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, tile);
 
                 if (distanceFromPlayer < minDistanceFromPlayer || distanceFromPlayer > maxDistanceFromPlayer)
+                    continue;
+
+                float nearestSpecialSiteDistance = DistanceToNearestSignalInterceptorSpecialSite(tile, playerTile);
+
+                if (nearestSpecialSiteDistance >= 0f && nearestSpecialSiteDistance < 30f)
                     continue;
 
                 float nearestSettlementDistance = DistanceToNearestSettlement(tile, playerTile);
@@ -1050,6 +1060,43 @@ namespace SignalInterceptor
                 return true;
 
             return false;
+        }
+
+        private bool IsSignalInterceptorSpecialSite(Site site)
+        {
+            if (site == null || site.Destroyed || site.parts == null)
+                return false;
+
+            return site.parts.Any(part =>
+                part?.def?.defName == "SI_MechanitorSignalSite"
+                || part?.def?.defName == "DoppelgangerCamp");
+        }
+
+        private float DistanceToNearestSignalInterceptorSpecialSite(PlanetTile tile, PlanetTile layerReferenceTile)
+        {
+            float best = -1f;
+
+            foreach (Site site in Find.WorldObjects.Sites)
+            {
+                if (!IsSignalInterceptorSpecialSite(site))
+                    continue;
+
+                if (!site.Tile.Valid)
+                    continue;
+
+                if (site.Tile.LayerDef != layerReferenceTile.LayerDef)
+                    continue;
+
+                if (!IsValidDistancePair(tile, site.Tile))
+                    continue;
+
+                float dist = Find.WorldGrid.ApproxDistanceInTiles(tile, site.Tile);
+
+                if (best < 0f || dist < best)
+                    best = dist;
+            }
+
+            return best;
         }
 
         private float GetTilePollution(PlanetTile tile)

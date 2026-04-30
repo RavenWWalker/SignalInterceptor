@@ -658,7 +658,7 @@ namespace SignalInterceptor
 
             try
             {
-                int maxQuantity = GetMechanitorImplantMaxQuantity(hediffDef, quantity);
+                int maxQuantity = GetMechanitorImplantMaxQuantity(defName, hediffDef, quantity);
                 int finalQuantity = Mathf.Clamp(quantity, 1, maxQuantity);
 
                 List<Hediff> existing = pawn.health.hediffSet.hediffs
@@ -667,9 +667,6 @@ namespace SignalInterceptor
 
                 Hediff hediff = existing.FirstOrDefault();
 
-                // ВАЖНО:
-                // Эти импланты имеют DuplicationAllowed=false.
-                // Поэтому оставляем один Hediff_Level и задаём ему Severity = количество.
                 for (int i = 1; i < existing.Count; i++)
                 {
                     pawn.health.RemoveHediff(existing[i]);
@@ -683,7 +680,7 @@ namespace SignalInterceptor
                     pawn.health.AddHediff(hediff, part);
                 }
 
-                hediff.Severity = finalQuantity;
+                SetMechanitorImplantHediffLevel(hediff, finalQuantity);
 
                 Log.Message("[Signal Interceptor] Mechanitor implant quantity set. " +
                             "Pawn=" + pawn.LabelShort +
@@ -691,7 +688,8 @@ namespace SignalInterceptor
                             " | Requested=" + quantity +
                             " | Final=" + finalQuantity +
                             " | Max=" + maxQuantity +
-                            " | Severity=" + hediff.Severity);
+                            " | Severity=" + hediff.Severity +
+                            " | Type=" + hediff.GetType().Name);
 
                 return true;
             }
@@ -707,17 +705,94 @@ namespace SignalInterceptor
             }
         }
 
-        private int GetMechanitorImplantMaxQuantity(HediffDef hediffDef, int fallback)
+        private int GetMechanitorImplantMaxQuantity(string defName, HediffDef hediffDef, int fallback)
         {
-            if (hediffDef == null)
-                return Mathf.Max(1, fallback);
+            switch (defName)
+            {
+                case "ControlSublinkImplant":
+                    return 6;
 
-            if (hediffDef.maxSeverity > 0f)
+                case "RemoteRepairerImplant":
+                    return 3;
+
+                case "MechFormfeederImplant":
+                    return 6;
+
+                case "RemoteShielderImplant":
+                    return 3;
+
+                case "RepairProbeImplant":
+                    return 6;
+            }
+
+            if (hediffDef != null && hediffDef.maxSeverity > 1f)
             {
                 return Mathf.Max(1, Mathf.RoundToInt(hediffDef.maxSeverity));
             }
 
             return Mathf.Max(1, fallback);
+        }
+
+        private void SetMechanitorImplantHediffLevel(Hediff hediff, int level)
+        {
+            if (hediff == null)
+                return;
+
+            level = Mathf.Max(1, level);
+
+            try
+            {
+                hediff.Severity = level;
+
+                System.Reflection.BindingFlags flags =
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic;
+
+                System.Type type = hediff.GetType();
+
+                while (type != null)
+                {
+                    System.Reflection.MethodInfo method = type
+                        .GetMethods(flags)
+                        .FirstOrDefault(m =>
+                            m.Name == "SetLevelTo"
+                            && m.GetParameters().Length == 1
+                            && m.GetParameters()[0].ParameterType == typeof(int));
+
+                    if (method != null)
+                    {
+                        method.Invoke(hediff, new object[] { level });
+                        hediff.Severity = level;
+                        return;
+                    }
+
+                    type = type.BaseType;
+                }
+
+                type = hediff.GetType();
+
+                while (type != null)
+                {
+                    System.Reflection.FieldInfo field = type.GetField("level", flags);
+
+                    if (field != null && field.FieldType == typeof(int))
+                    {
+                        field.SetValue(hediff, level);
+                        hediff.Severity = level;
+                        return;
+                    }
+
+                    type = type.BaseType;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning("[Signal Interceptor] Failed to set mechanitor implant hediff level. " +
+                            "Hediff=" + hediff.def?.defName +
+                            " | Level=" + level +
+                            " | Exception=" + ex);
+            }
         }
 
         private void GiveRogueMechanitorGear(Pawn pawn, float threatPoints)
@@ -1556,7 +1631,19 @@ namespace SignalInterceptor
 
             try
             {
-                Job job = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
+                Verb attackVerb = attacker.TryGetAttackVerb(target, allowManualCastWeapons: true);
+
+                if (!CanUseAttackFromCurrentPosition(attacker, target, attackVerb))
+                {
+                    TryMoveTowardsAttackTarget(attacker, target, attackVerb);
+                    return;
+                }
+
+                JobDef attackJobDef = attackVerb != null && attackVerb.IsMeleeAttack
+                    ? JobDefOf.AttackMelee
+                    : JobDefOf.AttackStatic;
+
+                Job job = JobMaker.MakeJob(attackJobDef, target);
                 job.expiryInterval = Rand.RangeInclusive(240, 420);
                 job.checkOverrideOnExpire = true;
 
@@ -1570,6 +1657,90 @@ namespace SignalInterceptor
                             target.LabelShort +
                             " | Exception=" + ex);
             }
+        }
+
+        private bool CanUseAttackFromCurrentPosition(Pawn attacker, Pawn target, Verb verb)
+        {
+            if (attacker == null || target == null || attacker.Map == null)
+                return false;
+
+            float distance = attacker.Position.DistanceTo(target.Position);
+
+            if (verb == null)
+            {
+                return distance <= 1.9f;
+            }
+
+            if (verb.IsMeleeAttack)
+            {
+                return attacker.Position.AdjacentTo8WayOrInside(target.Position);
+            }
+
+            float range = verb.verbProps?.range ?? 1.9f;
+
+            if (distance > range * 0.95f)
+                return false;
+
+            if (!GenSight.LineOfSight(attacker.Position, target.Position, attacker.Map))
+                return false;
+
+            return true;
+        }
+
+        private void TryMoveTowardsAttackTarget(Pawn attacker, Pawn target, Verb verb)
+        {
+            if (attacker == null || target == null || attacker.Map == null || attacker.jobs == null)
+                return;
+
+            Map map = attacker.Map;
+
+            float range = verb?.verbProps?.range ?? 1.9f;
+
+            int searchRadius;
+
+            if (verb != null && !verb.IsMeleeAttack)
+            {
+                searchRadius = Mathf.Clamp(Mathf.RoundToInt(range * 0.75f), 4, 18);
+            }
+            else
+            {
+                searchRadius = 2;
+            }
+
+            IntVec3 moveCell;
+
+            bool found = CellFinder.TryFindRandomCellNear(
+                target.Position,
+                map,
+                searchRadius,
+                c =>
+                    c.Standable(map)
+                    && c.GetFirstPawn(map) == null
+                    && attacker.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
+                out moveCell
+            );
+
+            if (!found)
+            {
+                moveCell = target.Position;
+            }
+
+            if (!moveCell.IsValid || !moveCell.InBounds(map) || !moveCell.Standable(map))
+                return;
+
+            if (attacker.CurJob != null
+                && attacker.CurJob.def == JobDefOf.Goto
+                && attacker.CurJob.targetA.IsValid
+                && attacker.CurJob.targetA.Cell.DistanceTo(moveCell) <= 4f)
+            {
+                return;
+            }
+
+            Job job = JobMaker.MakeJob(JobDefOf.Goto, moveCell);
+            job.expiryInterval = Rand.RangeInclusive(180, 300);
+            job.checkOverrideOnExpire = true;
+
+            attacker.jobs.TryTakeOrderedJob(job, JobTag.Misc);
         }
 
         private void KeepMechanitorMechanoidFighting(Pawn mech, Map map)
@@ -1743,6 +1914,8 @@ namespace SignalInterceptor
                 return;
             }
 
+            TryForceAttackPawn(attacker, target);
+
             try
             {
                 Job job = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
@@ -1781,6 +1954,26 @@ namespace SignalInterceptor
         {
             return def != null
                 && def.defName == "SI_RogueMechanitorFaction";
+        }
+
+        private void CleanupRogueMechanitorSettlements()
+        {
+            List<Settlement> settlements = Find.WorldObjects.AllWorldObjects
+                .OfType<Settlement>()
+                .Where(s => s.Faction != null
+                         && IsRogueMechanitorFactionDef(s.Faction.def))
+                .ToList();
+
+            foreach (Settlement settlement in settlements)
+            {
+                Log.Warning("[Signal Interceptor] Removing invalid rogue mechanitor settlement: " +
+                            settlement.Label +
+                            " | tile=" + settlement.Tile +
+                            " | faction=" + (settlement.Faction?.Name ?? "null") +
+                            " | factionDef=" + (settlement.Faction?.def?.defName ?? "null"));
+
+                Find.WorldObjects.Remove(settlement);
+            }
         }
 
         private XenotypeDef ChooseRogueMechanitorXenotype()
