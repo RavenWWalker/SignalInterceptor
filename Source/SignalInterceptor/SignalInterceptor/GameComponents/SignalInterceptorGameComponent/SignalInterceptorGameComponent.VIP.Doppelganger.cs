@@ -34,7 +34,22 @@ namespace SignalInterceptor
 
         private void SpawnDoppelgangerVIP(Map map, VIPSiteData data)
         {
-            int cloneCount = Rand.RangeInclusive(10, 15);
+            int vipTier = GetVIPTier(data.threatPoints);
+
+            int cloneCount;
+
+            if (vipTier <= 3)
+            {
+                cloneCount = Rand.RangeInclusive(5, 8);
+            }
+            else if (vipTier <= 6)
+            {
+                cloneCount = Rand.RangeInclusive(9, 13);
+            }
+            else
+            {
+                cloneCount = Rand.RangeInclusive(14, 20);
+            }
 
             PawnKindDef templateKind = PawnKindDefOf.Colonist;
 
@@ -109,7 +124,7 @@ namespace SignalInterceptor
                 template.ageTracker.AgeChronologicalTicks = 25 * 3600000L;
             }
 
-            BoostPawnSkills(template, GetVIPTier(data.threatPoints));
+            BoostPawnSkills(template, vipTier);
 
             IntVec3 baseCenter = map.Center;
 

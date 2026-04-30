@@ -55,6 +55,7 @@ namespace SignalInterceptor
             Settlement shuttleDestination = null;
 
             PlanetTile tile = PlanetTile.Invalid;
+            int siteSignalTier = 0;
 
             List<Faction> shuffledFactions = validFactions.InRandomOrder().ToList();
             bool foundValidQuestTarget = false;
@@ -68,6 +69,7 @@ namespace SignalInterceptor
                     PlanetTile candidateTile = PlanetTile.Invalid;
                     Settlement candidateOrigin = null;
                     Settlement candidateDestination = null;
+                    int candidateSignalTier = 0;
 
                     if (subtypeCandidate == VIPSubtype.ShuttleVIP)
                     {
@@ -86,13 +88,26 @@ namespace SignalInterceptor
                     }
                     else
                     {
-                        if (!TileFinder.TryFindNewSiteTile(out candidateTile, minDist: 16, maxDist: 36))
+                        if (!TryFindSiteTileForSubtype(
+                                map,
+                                factionCandidate,
+                                subtypeCandidate,
+                                out candidateTile,
+                                out candidateSignalTier))
+                        {
+                            Log.Message("[Signal Interceptor] VIP candidate skipped: no valid site tile found. Subtype=" +
+                                        subtypeCandidate +
+                                        " | Faction=" +
+                                        (factionCandidate?.Name ?? "null"));
+
                             continue;
+                        }
                     }
 
                     realFaction = factionCandidate;
                     subtype = subtypeCandidate;
                     tile = candidateTile;
+                    siteSignalTier = candidateSignalTier;
                     shuttleOrigin = candidateOrigin;
                     shuttleDestination = candidateDestination;
                     foundValidQuestTarget = true;
@@ -110,8 +125,8 @@ namespace SignalInterceptor
                 return;
             }
 
-            float threatPoints = GetThreatPoints(subtype, realFaction);
-            int timeoutTicks = TimeoutDaysRange.RandomInRange * 60000;
+             float threatPoints = GetThreatPoints(subtype, realFaction, siteSignalTier);
+             int timeoutTicks = TimeoutDaysRange.RandomInRange * 60000;
 
             SitePartDef vipPartDef = GetSitePartDef(subtype);
 
@@ -151,15 +166,7 @@ namespace SignalInterceptor
 
             string questName = GetQuestName(subtype);
 
-            if (subtype == VIPSubtype.DoppelgangerVIP ||
-                subtype == VIPSubtype.MechanitorSignalVIP)
-            {
-                site.customLabel = questName;
-            }
-            else
-            {
-                site.customLabel = GetSiteLabel(subtype);
-            }
+            site.customLabel = questName;
 
             string questDescription = GetQuestDescription(
                 subtype,
@@ -293,10 +300,10 @@ namespace SignalInterceptor
         }
 
         private bool TryChooseShuttleRouteSettlements(
-    Map playerMap,
-    Faction faction,
-    out Settlement origin,
-    out Settlement destination)
+            Map playerMap,
+            Faction faction,
+            out Settlement origin,
+            out Settlement destination)
         {
             origin = null;
             destination = null;
@@ -632,6 +639,450 @@ namespace SignalInterceptor
             return true;
         }
 
+        private struct WeightedSiteTile
+        {
+            public PlanetTile tile;
+            public float weight;
+            public int signalTier;
+
+            public WeightedSiteTile(PlanetTile tile, float weight, int signalTier)
+            {
+                this.tile = tile;
+                this.weight = weight;
+                this.signalTier = signalTier;
+            }
+        }
+
+        private bool TryFindSiteTileForSubtype(
+            Map map,
+            Faction faction,
+            VIPSubtype subtype,
+            out PlanetTile tile,
+            out int signalTier)
+        {
+            tile = PlanetTile.Invalid;
+            signalTier = 0;
+
+            switch (subtype)
+            {
+                case VIPSubtype.DoppelgangerVIP:
+                    return TryFindDoppelgangerSiteTile(map, out tile, out signalTier);
+
+                case VIPSubtype.MechanitorSignalVIP:
+                    return TryFindMechanitorSignalSiteTile(map, out tile, out signalTier);
+
+                default:
+                    signalTier = 0;
+                    return TileFinder.TryFindNewSiteTile(out tile, minDist: 16, maxDist: 36);
+            }
+        }
+
+        private bool TryFindDoppelgangerSiteTile(Map map, out PlanetTile resultTile, out int signalTier)
+        {
+            resultTile = PlanetTile.Invalid;
+            signalTier = 0;
+
+            if (map == null)
+                return false;
+
+            PlanetTile playerTile = map.Tile;
+
+            const int attempts = 3000;
+            const float minDistanceFromPlayer = 16f;
+            const float maxDistanceFromPlayer = 120f;
+            const float minSettlementDistance = 12f;
+
+            List<WeightedSiteTile> candidates = new List<WeightedSiteTile>();
+
+            for (int i = 0; i < attempts; i++)
+            {
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 16, maxDist: 120))
+                    continue;
+
+                if (!IsValidSiteTile(tile))
+                    continue;
+
+                if (tile.LayerDef != playerTile.LayerDef)
+                    continue;
+
+                if (!IsValidDistancePair(playerTile, tile))
+                    continue;
+
+                float distanceFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, tile);
+
+                if (distanceFromPlayer < minDistanceFromPlayer || distanceFromPlayer > maxDistanceFromPlayer)
+                    continue;
+
+                float nearestSettlementDistance = DistanceToNearestSettlement(tile, playerTile);
+
+                if (nearestSettlementDistance >= 0f && nearestSettlementDistance < minSettlementDistance)
+                    continue;
+
+                int tier;
+                float bandWeight;
+
+                if (distanceFromPlayer < 35f)
+                {
+                    // Ближний сигнал: 16–35
+                    tier = 1;
+                    bandWeight = 1.0f;
+                }
+                else if (distanceFromPlayer < 60f)
+                {
+                    // Дальний сигнал: 35–60
+                    tier = 2;
+                    bandWeight = 0.75f;
+                }
+                else if (distanceFromPlayer < 80f)
+                {
+                    // 60–80: в основном дальний сигнал, иногда глухая зона
+                    if (Rand.Chance(0.25f))
+                    {
+                        tier = 3;
+                        bandWeight = 0.25f;
+                    }
+                    else
+                    {
+                        tier = 2;
+                        bandWeight = 0.65f;
+                    }
+                }
+                else
+                {
+                    // Глухая зона: 80–120
+                    tier = 3;
+                    bandWeight = 0.18f;
+                }
+
+                float weight = bandWeight;
+
+                Hilliness hilliness = Find.WorldGrid[tile].hilliness;
+
+                if (hilliness == Hilliness.SmallHills)
+                    weight *= 1.25f;
+                else if (hilliness == Hilliness.LargeHills)
+                    weight *= 1.75f;
+                else if (hilliness == Hilliness.Mountainous)
+                    weight *= 2.25f;
+
+                if (IsPreferredDoppelgangerBiome(tile))
+                    weight *= 1.8f;
+
+                if (TileHasRoad(tile))
+                    weight *= 0.35f;
+                else
+                    weight *= 1.35f;
+
+                if (nearestSettlementDistance >= 0f)
+                    weight *= Mathf.Clamp(nearestSettlementDistance / 25f, 0.75f, 2.25f);
+
+                candidates.Add(new WeightedSiteTile(tile, weight, tier));
+            }
+
+            if (candidates.Count == 0)
+            {
+                Log.Message("[Signal Interceptor] Doppelganger site tile not found.");
+                return false;
+            }
+
+            WeightedSiteTile selected = candidates.RandomElementByWeight(c => c.weight);
+
+            resultTile = selected.tile;
+            signalTier = selected.signalTier;
+
+            Log.Message("[Signal Interceptor] Doppelganger site tile selected. " +
+                        "Tile=" + resultTile +
+                        " | Signal tier=" + signalTier +
+                        " | Candidates=" + candidates.Count);
+
+            return true;
+        }
+
+        private bool TryFindMechanitorSignalSiteTile(Map map, out PlanetTile resultTile, out int signalTier)
+        {
+            resultTile = PlanetTile.Invalid;
+            signalTier = 0;
+
+            if (map == null)
+                return false;
+
+            PlanetTile playerTile = map.Tile;
+
+            const int attempts = 3000;
+            const float minDistanceFromPlayer = 30f;
+            const float maxDistanceFromPlayer = 120f;
+            const float minSettlementDistance = 10f;
+
+            List<WeightedSiteTile> candidates = new List<WeightedSiteTile>();
+
+            for (int i = 0; i < attempts; i++)
+            {
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 30, maxDist: 120))
+                    continue;
+
+                if (!IsValidSiteTile(tile))
+                    continue;
+
+                if (tile.LayerDef != playerTile.LayerDef)
+                    continue;
+
+                if (!IsValidDistancePair(playerTile, tile))
+                    continue;
+
+                float distanceFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, tile);
+
+                if (distanceFromPlayer < minDistanceFromPlayer || distanceFromPlayer > maxDistanceFromPlayer)
+                    continue;
+
+                float nearestSettlementDistance = DistanceToNearestSettlement(tile, playerTile);
+
+                if (nearestSettlementDistance >= 0f && nearestSettlementDistance < minSettlementDistance)
+                    continue;
+
+                int tier;
+
+                if (distanceFromPlayer < 55f)
+                    tier = 1;
+                else if (distanceFromPlayer < 90f)
+                    tier = 2;
+                else
+                    tier = 3;
+
+                float weight = 1f;
+
+                float pollution = GetTilePollution(tile);
+                if (pollution > 0f)
+                    weight *= Mathf.Lerp(1.5f, 3.5f, Mathf.Clamp01(pollution));
+
+                Hilliness hilliness = Find.WorldGrid[tile].hilliness;
+
+                if (hilliness == Hilliness.SmallHills)
+                    weight *= 1.2f;
+                else if (hilliness == Hilliness.LargeHills)
+                    weight *= 1.6f;
+                else if (hilliness == Hilliness.Mountainous)
+                    weight *= 2.0f;
+
+                if (IsPreferredMechanitorBiome(tile))
+                    weight *= 1.75f;
+
+                if (nearestSettlementDistance >= 0f)
+                    weight *= Mathf.Clamp(nearestSettlementDistance / 20f, 0.75f, 2.5f);
+
+                if (TileHasRoad(tile))
+                    weight *= 0.65f;
+
+                candidates.Add(new WeightedSiteTile(tile, weight, tier));
+            }
+
+            if (candidates.Count == 0)
+            {
+                Log.Message("[Signal Interceptor] Mechanitor signal site tile not found.");
+                return false;
+            }
+
+            WeightedSiteTile selected = candidates.RandomElementByWeight(c => c.weight);
+
+            resultTile = selected.tile;
+            signalTier = selected.signalTier;
+
+            Log.Message("[Signal Interceptor] Mechanitor signal site tile selected. " +
+                        "Tile=" + resultTile +
+                        " | Signal tier=" + signalTier +
+                        " | Candidates=" + candidates.Count);
+
+            return true;
+        }
+
+        private float DistanceToNearestSettlement(PlanetTile tile, PlanetTile layerReferenceTile)
+        {
+            float best = -1f;
+
+            foreach (Settlement settlement in Find.WorldObjects.Settlements)
+            {
+                if (settlement == null || settlement.Destroyed)
+                    continue;
+
+                if (!settlement.Tile.Valid)
+                    continue;
+
+                if (settlement.Tile.LayerDef != layerReferenceTile.LayerDef)
+                    continue;
+
+                if (!IsValidDistancePair(tile, settlement.Tile))
+                    continue;
+
+                float distance = Find.WorldGrid.ApproxDistanceInTiles(tile, settlement.Tile);
+
+                if (best < 0f || distance < best)
+                    best = distance;
+            }
+
+            return best;
+        }
+
+        private bool IsPreferredDoppelgangerBiome(PlanetTile tile)
+        {
+            BiomeDef biome = GetTileBiome(tile);
+
+            if (biome == null || biome.defName == null)
+                return false;
+
+            string defName = biome.defName.ToLowerInvariant();
+
+            return defName.Contains("swamp")
+                || defName.Contains("marsh")
+                || defName.Contains("bog")
+                || defName.Contains("tundra")
+                || defName.Contains("ice")
+                || defName.Contains("desert")
+                || defName.Contains("wasteland")
+                || defName.Contains("polluted");
+        }
+
+        private BiomeDef GetTileBiome(PlanetTile tile)
+        {
+            try
+            {
+                object worldTile = Find.WorldGrid[tile];
+
+                if (worldTile == null)
+                    return null;
+
+                System.Type type = worldTile.GetType();
+
+                System.Reflection.PropertyInfo primaryBiomeProperty = type.GetProperty("PrimaryBiome");
+                if (primaryBiomeProperty != null)
+                {
+                    object value = primaryBiomeProperty.GetValue(worldTile, null);
+                    if (value is BiomeDef biome)
+                        return biome;
+                }
+
+                System.Reflection.PropertyInfo biomeProperty = type.GetProperty("Biome");
+                if (biomeProperty != null)
+                {
+                    object value = biomeProperty.GetValue(worldTile, null);
+                    if (value is BiomeDef biome)
+                        return biome;
+                }
+
+                System.Reflection.FieldInfo biomeField =
+                    type.GetField("biome") ??
+                    type.GetField("Biome") ??
+                    type.GetField("primaryBiome") ??
+                    type.GetField("PrimaryBiome");
+
+                if (biomeField != null)
+                {
+                    object value = biomeField.GetValue(worldTile);
+                    if (value is BiomeDef biome)
+                        return biome;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+
+            return null;
+        }
+
+        private bool IsPreferredMechanitorBiome(PlanetTile tile)
+        {
+            BiomeDef biome = GetTileBiome(tile);
+
+            if (biome == null || biome.defName == null)
+                return false;
+
+            string defName = biome.defName.ToLowerInvariant();
+
+            return defName.Contains("desert")
+                || defName.Contains("tundra")
+                || defName.Contains("ice")
+                || defName.Contains("wasteland")
+                || defName.Contains("polluted")
+                || defName.Contains("boreal");
+        }
+
+        private bool TileHasRoad(PlanetTile tile)
+        {
+            try
+            {
+                object worldTile = Find.WorldGrid[tile];
+                System.Type type = worldTile.GetType();
+
+                System.Reflection.PropertyInfo property = type.GetProperty("Roads");
+                if (property != null)
+                {
+                    object value = property.GetValue(worldTile, null);
+                    if (EnumerableHasAny(value))
+                        return true;
+                }
+
+                System.Reflection.FieldInfo field = type.GetField("roads") ?? type.GetField("Roads");
+                if (field != null)
+                {
+                    object value = field.GetValue(worldTile);
+                    if (EnumerableHasAny(value))
+                        return true;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private bool EnumerableHasAny(object value)
+        {
+            if (value == null)
+                return false;
+
+            System.Collections.IEnumerable enumerable = value as System.Collections.IEnumerable;
+
+            if (enumerable == null)
+                return false;
+
+            foreach (object _ in enumerable)
+                return true;
+
+            return false;
+        }
+
+        private float GetTilePollution(PlanetTile tile)
+        {
+            try
+            {
+                object worldTile = Find.WorldGrid[tile];
+                System.Type type = worldTile.GetType();
+
+                System.Reflection.PropertyInfo property = type.GetProperty("pollution") ?? type.GetProperty("Pollution");
+                if (property != null)
+                {
+                    object value = property.GetValue(worldTile, null);
+                    if (value is float f)
+                        return f;
+                }
+
+                System.Reflection.FieldInfo field = type.GetField("pollution") ?? type.GetField("Pollution");
+                if (field != null)
+                {
+                    object value = field.GetValue(worldTile);
+                    if (value is float f)
+                        return f;
+                }
+            }
+            catch
+            {
+                return 0f;
+            }
+
+            return 0f;
+        }
+
         private string GenerateShuttleQuestName()
         {
             List<string> adjectives = GetTranslatedStringList(
@@ -788,7 +1239,7 @@ namespace SignalInterceptor
             }
         }
 
-        private float GetThreatPoints(VIPSubtype subtype, Faction faction)
+        private float GetThreatPoints(VIPSubtype subtype, Faction faction, int signalTier = 0)
         {
             float baseThreat;
 
@@ -803,7 +1254,12 @@ namespace SignalInterceptor
                     break;
 
                 case VIPSubtype.MechanitorSignalVIP:
-                    baseThreat = Rand.Range(900f, 5200f);
+                    if (signalTier >= 3)
+                        baseThreat = Rand.Range(3000f, 5200f);
+                    else if (signalTier == 2)
+                        baseThreat = Rand.Range(1800f, 3400f);
+                    else
+                        baseThreat = Rand.Range(900f, 1900f);
                     break;
 
                 case VIPSubtype.PilgrimVIP:
@@ -811,7 +1267,12 @@ namespace SignalInterceptor
                     break;
 
                 case VIPSubtype.DoppelgangerVIP:
-                    baseThreat = Rand.Range(900f, 5000f);
+                    if (signalTier >= 3)
+                        baseThreat = Rand.Range(3000f, 5000f);
+                    else if (signalTier == 2)
+                        baseThreat = Rand.Range(1600f, 3100f);
+                    else
+                        baseThreat = Rand.Range(700f, 1700f);
                     break;
 
                 default:
