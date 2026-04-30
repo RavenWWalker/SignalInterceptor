@@ -56,13 +56,22 @@ namespace SignalInterceptor
 
             SpawnCampProps(map, center);
 
-            // ВАЖНО:
-            // Механоидов больше НЕ помещаем в LordJob_AssaultColony.
-            // Иначе ванильный Lord всё равно может объявить отступление после потерь.
-            StartMechanitorMechanoidHunt(map, signalFaction, mechs);
+            // Все боевые единицы сигнала должны сразу атаковать игрока.
+            // Используем AssaultColony, но ниже EnforceMechanitorSignalCombat будет
+            // постоянно сбивать flee/exit jobs, если vanilla AI вдруг попытается увести их с карты.
+            List<Pawn> assaultPawns = new List<Pawn>();
 
-            // Механитор отдельно держится рядом с лагерем/мехами.
-            StartMechanitorGuardLord(map, signalFaction, center, mechanitor);
+            if (!mechs.NullOrEmpty())
+            {
+                assaultPawns.AddRange(mechs.Where(p => p != null && !p.Dead));
+            }
+
+            if (mechanitor != null && !mechanitor.Dead)
+            {
+                assaultPawns.Add(mechanitor);
+            }
+
+            StartMechanitorAssaultLord(map, signalFaction, assaultPawns);
 
             // Первый пинок поведения сразу после генерации.
             EnforceMechanitorSignalCombat(data);
@@ -522,7 +531,7 @@ namespace SignalInterceptor
                 case 3:
                     controlSublinkLevel = 1;
                     remoteRepairerLevel = 1;
-                    gestationProcessorLevel = 1;
+                    gestationProcessorLevel = 2;
                     remoteShielderLevel = 0;
                     repairProbeLevel = 2;
                     break;
@@ -530,17 +539,17 @@ namespace SignalInterceptor
                 case 4:
                     controlSublinkLevel = 2;
                     remoteRepairerLevel = 1;
-                    gestationProcessorLevel = 2;
+                    gestationProcessorLevel = 3;
                     remoteShielderLevel = 1;
-                    repairProbeLevel = 2;
+                    repairProbeLevel = 3;
                     break;
 
                 case 5:
                     controlSublinkLevel = 3;
                     remoteRepairerLevel = 1;
-                    gestationProcessorLevel = 3;
+                    gestationProcessorLevel = 4;
                     remoteShielderLevel = 1;
-                    repairProbeLevel = 3;
+                    repairProbeLevel = 4;
                     break;
 
                 case 6:
@@ -577,11 +586,11 @@ namespace SignalInterceptor
                     break;
             }
 
-            AddStackedHediffsToPawn(pawn, "ControlSublinkImplant", controlSublinkLevel);
-            AddStackedHediffsToPawn(pawn, "RemoteRepairerImplant", remoteRepairerLevel);
-            AddStackedHediffsToPawn(pawn, "MechFormfeederImplant", gestationProcessorLevel);
-            AddStackedHediffsToPawn(pawn, "RemoteShielderImplant", remoteShielderLevel);
-            AddStackedHediffsToPawn(pawn, "RepairProbeImplant", repairProbeLevel);
+            AddOrSetMechanitorImplantQuantity(pawn, "ControlSublinkImplant", controlSublinkLevel);
+            AddOrSetMechanitorImplantQuantity(pawn, "RemoteRepairerImplant", remoteRepairerLevel);
+            AddOrSetMechanitorImplantQuantity(pawn, "MechFormfeederImplant", gestationProcessorLevel);
+            AddOrSetMechanitorImplantQuantity(pawn, "RemoteShielderImplant", remoteShielderLevel);
+            AddOrSetMechanitorImplantQuantity(pawn, "RepairProbeImplant", repairProbeLevel);
 
             // Не механиторские, но боевые/защитные импланты для выживаемости.
             if (tier >= 4)
@@ -628,7 +637,7 @@ namespace SignalInterceptor
                         " | RepairProbe=" + repairProbeLevel);
         }
 
-        private bool AddStackedHediffsToPawn(Pawn pawn, string defName, int count)
+        private bool AddOrSetMechanitorImplantQuantity(Pawn pawn, string defName, int quantity)
         {
             if (pawn?.health?.hediffSet == null)
                 return false;
@@ -636,53 +645,79 @@ namespace SignalInterceptor
             if (defName.NullOrEmpty())
                 return false;
 
-            if (count <= 0)
+            if (quantity <= 0)
                 return true;
 
             HediffDef hediffDef = DefDatabase<HediffDef>.GetNamedSilentFail(defName);
 
             if (hediffDef == null)
             {
-                Log.Warning("[Signal Interceptor] HediffDef not found: " + defName);
+                Log.Warning("[Signal Interceptor] Mechanitor implant HediffDef not found: " + defName);
                 return false;
             }
 
             try
             {
+                int maxQuantity = GetMechanitorImplantMaxQuantity(hediffDef, quantity);
+                int finalQuantity = Mathf.Clamp(quantity, 1, maxQuantity);
+
                 List<Hediff> existing = pawn.health.hediffSet.hediffs
                     .Where(h => h != null && h.def == hediffDef)
                     .ToList();
 
-                foreach (Hediff hediff in existing)
+                Hediff hediff = existing.FirstOrDefault();
+
+                // ВАЖНО:
+                // Эти импланты имеют DuplicationAllowed=false.
+                // Поэтому оставляем один Hediff_Level и задаём ему Severity = количество.
+                for (int i = 1; i < existing.Count; i++)
                 {
-                    pawn.health.RemoveHediff(hediff);
+                    pawn.health.RemoveHediff(existing[i]);
                 }
 
                 BodyPartRecord part = FindBestBodyPartForHediff(pawn, hediffDef);
 
-                for (int i = 0; i < count; i++)
+                if (hediff == null)
                 {
-                    Hediff hediff = HediffMaker.MakeHediff(hediffDef, pawn, part);
+                    hediff = HediffMaker.MakeHediff(hediffDef, pawn, part);
                     pawn.health.AddHediff(hediff, part);
                 }
 
-                Log.Message("[Signal Interceptor] Added stacked hediffs. Pawn=" +
-                            pawn.LabelShort +
+                hediff.Severity = finalQuantity;
+
+                Log.Message("[Signal Interceptor] Mechanitor implant quantity set. " +
+                            "Pawn=" + pawn.LabelShort +
                             " | Hediff=" + defName +
-                            " | Count=" + count);
+                            " | Requested=" + quantity +
+                            " | Final=" + finalQuantity +
+                            " | Max=" + maxQuantity +
+                            " | Severity=" + hediff.Severity);
 
                 return true;
             }
             catch (System.Exception ex)
             {
-                Log.Warning("[Signal Interceptor] Failed to add stacked hediffs. Pawn=" +
-                            pawn.LabelShort +
+                Log.Warning("[Signal Interceptor] Failed to set mechanitor implant quantity. " +
+                            "Pawn=" + pawn.LabelShort +
                             " | Hediff=" + defName +
-                            " | Count=" + count +
+                            " | Quantity=" + quantity +
                             " | Exception=" + ex);
 
                 return false;
             }
+        }
+
+        private int GetMechanitorImplantMaxQuantity(HediffDef hediffDef, int fallback)
+        {
+            if (hediffDef == null)
+                return Mathf.Max(1, fallback);
+
+            if (hediffDef.maxSeverity > 0f)
+            {
+                return Mathf.Max(1, Mathf.RoundToInt(hediffDef.maxSeverity));
+            }
+
+            return Mathf.Max(1, fallback);
         }
 
         private void GiveRogueMechanitorGear(Pawn pawn, float threatPoints)
@@ -1400,11 +1435,12 @@ namespace SignalInterceptor
             Map map = data.site.Map;
             Faction faction = data.enemyFaction;
 
-            IntVec3 center = data.signalCampCenter.IsValid ? data.signalCampCenter : map.Center;
-
             List<Pawn> factionPawns = map.mapPawns.AllPawnsSpawned
                 .Where(p => p != null
                          && !p.Dead
+                         && !p.Downed
+                         && p.Spawned
+                         && p.Map == map
                          && p.Faction == faction)
                 .ToList();
 
@@ -1413,24 +1449,126 @@ namespace SignalInterceptor
                 return;
             }
 
-            Pawn mechanitor = factionPawns
-                .Where(p => p.RaceProps != null && p.RaceProps.Humanlike)
-                .OrderBy(p => p.Position.DistanceTo(center))
-                .FirstOrDefault();
-
-            List<Pawn> mechs = factionPawns
-                .Where(p => p.RaceProps != null && p.RaceProps.IsMechanoid)
-                .Where(p => !p.Downed)
-                .ToList();
-
-            foreach (Pawn mech in mechs)
+            foreach (Pawn pawn in factionPawns)
             {
-                KeepMechanitorMechanoidFighting(mech, map);
+                KeepMechanitorCombatPawnFighting(pawn, map);
+            }
+        }
+
+        private void KeepMechanitorCombatPawnFighting(Pawn pawn, Map map)
+        {
+            if (pawn == null || pawn.Dead || pawn.Downed || map == null)
+            {
+                return;
             }
 
-            if (mechanitor != null && !mechanitor.Downed)
+            if (pawn.mindState == null)
             {
-                ControlRogueMechanitorPosition(mechanitor, mechs, map, center);
+                pawn.mindState = new Pawn_MindState(pawn);
+            }
+
+            bool badJob = IsFleeOrExitJob(pawn.CurJob);
+            bool badDuty = IsFleeOrExitDuty(pawn.mindState.duty);
+
+            if (badJob && pawn.jobs != null)
+            {
+                pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+            }
+
+            if (badDuty || pawn.mindState.duty == null)
+            {
+                pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
+            }
+
+            Pawn target = FindNearestPlayerPawnForAttack(pawn, map);
+
+            if (target == null)
+            {
+                return;
+            }
+
+            if (ShouldForceNewAttackJob(pawn, target))
+            {
+                TryForceAttackPawn(pawn, target);
+            }
+        }
+
+        private Pawn FindNearestPlayerPawnForAttack(Pawn attacker, Map map)
+        {
+            if (attacker == null || map == null)
+                return null;
+
+            return map.mapPawns.AllPawnsSpawned
+                .Where(p => p != null)
+                .Where(p => p.Faction == Faction.OfPlayer)
+                .Where(p => !p.Dead && !p.Downed)
+                .Where(p => p.Spawned && p.Map == map)
+                .OrderBy(p => p.Position.DistanceTo(attacker.Position))
+                .FirstOrDefault();
+        }
+
+        private bool ShouldForceNewAttackJob(Pawn attacker, Pawn target)
+        {
+            if (attacker == null || target == null)
+                return false;
+
+            Job curJob = attacker.CurJob;
+
+            if (curJob == null)
+                return true;
+
+            if (IsFleeOrExitJob(curJob))
+                return true;
+
+            string defName = curJob.def?.defName ?? "";
+
+            bool alreadyAttacking =
+                curJob.def == JobDefOf.AttackMelee ||
+                curJob.def == JobDefOf.AttackStatic ||
+                defName.Contains("Attack");
+
+            if (!alreadyAttacking)
+            {
+                return IsIdleOrWaitJob(curJob);
+            }
+
+            if (curJob.targetA.HasThing && curJob.targetA.Thing == target)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private void TryForceAttackPawn(Pawn attacker, Pawn target)
+        {
+            if (attacker == null || target == null)
+                return;
+
+            if (attacker.Dead || attacker.Downed)
+                return;
+
+            if (attacker.jobs == null)
+                return;
+
+            if (!attacker.Spawned || !target.Spawned || attacker.Map != target.Map)
+                return;
+
+            try
+            {
+                Job job = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
+                job.expiryInterval = Rand.RangeInclusive(240, 420);
+                job.checkOverrideOnExpire = true;
+
+                attacker.jobs.TryTakeOrderedJob(job, JobTag.Misc);
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning("[Signal Interceptor] Failed to force mechanitor signal attack job. Pawn=" +
+                            attacker.LabelShort +
+                            " | Target=" +
+                            target.LabelShort +
+                            " | Exception=" + ex);
             }
         }
 
@@ -1516,8 +1654,6 @@ namespace SignalInterceptor
             {
                 guardPoint = nearestMech.Position;
             }
-
-            mechanitor.mindState.duty = new PawnDuty(DutyDefOf.Defend, guardPoint);
 
             float distanceToGuardPoint = mechanitor.Position.DistanceTo(guardPoint);
 
