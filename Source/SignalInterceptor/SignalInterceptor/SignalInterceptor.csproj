@@ -56,27 +56,39 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="CompProperties_SignalInterceptor.cs" />
-    <Compile Include="CompSignalInterceptor.cs" />
-    <Compile Include="GenStep_ShuttleVIP.cs" />
-    <Compile Include="HarmonyPatches.cs" />
-    <Compile Include="IncidentWorker_DoppelgangerFight.cs" />
-    <Compile Include="InterceptedSignalType.cs" />
-    <Compile Include="JobDriver_ScanSignals.cs" />
-    <Compile Include="MultiplayerCompat.cs" />
-    <Compile Include="Patch_DropShuttle_ClampCell.cs" />
-    <Compile Include="Patch_FactionDialog.cs" />
+    <Compile Include="Comps\CompProperties_SignalInterceptor.cs" />
+    <Compile Include="Comps\CompSignalInterceptor.cs" />
+    <Compile Include="Core\HarmonyPatches.cs" />
+    <Compile Include="Core\InterceptedSignalType.cs" />
+    <Compile Include="Core\MultiplayerCompat.cs" />
+    <Compile Include="Core\SignalInterceptorUtility.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.Core.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.Data.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.DoppelgangerFight.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.Pending.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.SaveLoad.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.Stash.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.Tick.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.Utility.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.VIP.Core.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.VIP.Doppelganger.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.VIP.Mechanitor.cs" />
+    <Compile Include="GameComponents\SignalnterceptorGameComponent\SignalInterceptorGameComponent.VIP.Shuttle.cs" />
+    <Compile Include="Patches\Patch_DropShuttle_ClampCell.cs" />
+    <Compile Include="Patches\Patch_FactionDialog.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="QuestNode_Root_InterceptedStash.cs" />
-    <Compile Include="QuestNode_Root_InterceptedVIP.cs" />
-    <Compile Include="QuestPart_FactionGoodwillOnTimeout.cs" />
-    <Compile Include="SignalInterceptorGameComponent.cs" />
-    <Compile Include="SignalInterceptorUtility.cs" />
-    <Compile Include="ThoughtWorker_TheOriginal.cs" />
-    <Compile Include="WorkGiver_ScanSignals.cs" />
+    <Compile Include="Quests\Stash\QuestNode_Root_InterceptedStash.cs" />
+    <Compile Include="Quests\Stash\QuestPart_FactionGoodwillOnTimeout.cs" />
+    <Compile Include="Quests\VIP\Doppelganger\IncidentWorker_DoppelgangerFight.cs" />
+    <Compile Include="Quests\VIP\Doppelganger\ThoughtWorker_TheOriginal.cs" />
+    <Compile Include="Quests\VIP\QuestNode_Root_InterceptedVIP.cs" />
+    <Compile Include="Quests\VIP\Shuttle\GenStep_ShuttleVIP.cs" />
+    <Compile Include="Work\JobDriver_ScanSignals.cs" />
+    <Compile Include="Work\WorkGiver_ScanSignals.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
