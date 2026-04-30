@@ -1603,17 +1603,23 @@ namespace SignalInterceptor
                 curJob.def == JobDefOf.AttackStatic ||
                 defName.Contains("Attack");
 
-            if (!alreadyAttacking)
+            if (alreadyAttacking)
             {
-                return IsIdleOrWaitJob(curJob);
-            }
+                if (!curJob.targetA.HasThing || curJob.targetA.Thing != target)
+                    return true;
 
-            if (curJob.targetA.HasThing && curJob.targetA.Thing == target)
-            {
+                Verb attackVerb = attacker.TryGetAttackVerb(target, allowManualCastWeapons: true);
+
+                if (!CanUseAttackFromCurrentPosition(attacker, target, attackVerb))
+                    return true;
+
                 return false;
             }
 
-            return true;
+            if (curJob.def == JobDefOf.Goto)
+                return false;
+
+            return IsIdleOrWaitJob(curJob);
         }
 
         private void TryForceAttackPawn(Pawn attacker, Pawn target)
@@ -1658,90 +1664,6 @@ namespace SignalInterceptor
                             target.LabelShort +
                             " | Exception=" + ex);
             }
-        }
-
-        private bool CanUseAttackFromCurrentPosition(Pawn attacker, Pawn target, Verb verb)
-        {
-            if (attacker == null || target == null || attacker.Map == null)
-                return false;
-
-            float distance = attacker.Position.DistanceTo(target.Position);
-
-            if (verb == null)
-            {
-                return distance <= 1.9f;
-            }
-
-            if (verb.IsMeleeAttack)
-            {
-                return attacker.Position.AdjacentTo8WayOrInside(target.Position);
-            }
-
-            float range = verb.verbProps?.range ?? 1.9f;
-
-            if (distance > range * 0.95f)
-                return false;
-
-            if (!GenSight.LineOfSight(attacker.Position, target.Position, attacker.Map))
-                return false;
-
-            return true;
-        }
-
-        private void TryMoveTowardsAttackTarget(Pawn attacker, Pawn target, Verb verb)
-        {
-            if (attacker == null || target == null || attacker.Map == null || attacker.jobs == null)
-                return;
-
-            Map map = attacker.Map;
-
-            float range = verb?.verbProps?.range ?? 1.9f;
-
-            int searchRadius;
-
-            if (verb != null && !verb.IsMeleeAttack)
-            {
-                searchRadius = Mathf.Clamp(Mathf.RoundToInt(range * 0.75f), 4, 18);
-            }
-            else
-            {
-                searchRadius = 2;
-            }
-
-            IntVec3 moveCell;
-
-            bool found = CellFinder.TryFindRandomCellNear(
-                target.Position,
-                map,
-                searchRadius,
-                c =>
-                    c.Standable(map)
-                    && c.GetFirstPawn(map) == null
-                    && attacker.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
-                out moveCell
-            );
-
-            if (!found)
-            {
-                moveCell = target.Position;
-            }
-
-            if (!moveCell.IsValid || !moveCell.InBounds(map) || !moveCell.Standable(map))
-                return;
-
-            if (attacker.CurJob != null
-                && attacker.CurJob.def == JobDefOf.Goto
-                && attacker.CurJob.targetA.IsValid
-                && attacker.CurJob.targetA.Cell.DistanceTo(moveCell) <= 4f)
-            {
-                return;
-            }
-
-            Job job = JobMaker.MakeJob(JobDefOf.Goto, moveCell);
-            job.expiryInterval = Rand.RangeInclusive(180, 300);
-            job.checkOverrideOnExpire = true;
-
-            attacker.jobs.TryTakeOrderedJob(job, JobTag.Misc);
         }
 
         private void KeepMechanitorMechanoidFighting(Pawn mech, Map map)
@@ -1900,36 +1822,111 @@ namespace SignalInterceptor
         private void TryForceAttackNearestPlayerPawn(Pawn attacker, Map map)
         {
             if (attacker == null || attacker.Dead || attacker.Downed || attacker.jobs == null || map == null)
-            {
                 return;
-            }
 
             Pawn target = map.mapPawns.AllPawnsSpawned
                 .Where(p => p.Faction == Faction.OfPlayer)
                 .Where(p => !p.Dead && !p.Downed)
+                .Where(p => p.Spawned && p.Map == map)
                 .OrderBy(p => p.Position.DistanceTo(attacker.Position))
                 .FirstOrDefault();
 
             if (target == null)
+                return;
+
+            TryForceAttackPawn(attacker, target);
+        }
+
+        private bool CanUseAttackFromCurrentPosition(Pawn attacker, Pawn target, Verb verb)
+        {
+            if (attacker == null || target == null || attacker.Map == null)
+                return false;
+
+            if (!attacker.Position.InBounds(attacker.Map) || !target.Position.InBounds(attacker.Map))
+                return false;
+
+            float distance = attacker.Position.DistanceTo(target.Position);
+
+            if (verb == null)
+            {
+                return distance <= 1.9f;
+            }
+
+            if (verb.IsMeleeAttack)
+            {
+                return attacker.Position.AdjacentTo8WayOrInside(target.Position);
+            }
+
+            float range = verb.verbProps?.range ?? 1.9f;
+
+            if (distance > range * 0.95f)
+                return false;
+
+            if (!GenSight.LineOfSight(attacker.Position, target.Position, attacker.Map))
+                return false;
+
+            return true;
+        }
+
+        private void TryMoveTowardsAttackTarget(Pawn attacker, Pawn target, Verb verb)
+        {
+            if (attacker == null || target == null || attacker.Map == null || attacker.jobs == null)
+                return;
+
+            if (attacker.Dead || attacker.Downed)
+                return;
+
+            Map map = attacker.Map;
+
+            float range = verb?.verbProps?.range ?? 1.9f;
+
+            int searchRadius;
+
+            if (verb != null && !verb.IsMeleeAttack)
+            {
+                searchRadius = Mathf.Clamp(Mathf.RoundToInt(range * 0.65f), 5, 18);
+            }
+            else
+            {
+                searchRadius = 2;
+            }
+
+            IntVec3 moveCell;
+
+            bool found = CellFinder.TryFindRandomCellNear(
+                target.Position,
+                map,
+                searchRadius,
+                c => c.Standable(map)
+                     && c.GetFirstPawn(map) == null
+                     && attacker.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
+                out moveCell
+            );
+
+            if (!found)
+            {
+                moveCell = target.Position;
+            }
+
+            if (!moveCell.IsValid || !moveCell.InBounds(map) || !moveCell.Standable(map))
+                return;
+
+            if (!attacker.CanReach(moveCell, PathEndMode.OnCell, Danger.Deadly))
+                return;
+
+            if (attacker.CurJob != null
+                && attacker.CurJob.def == JobDefOf.Goto
+                && attacker.CurJob.targetA.IsValid
+                && attacker.CurJob.targetA.Cell.DistanceTo(moveCell) <= 4f)
             {
                 return;
             }
 
-            TryForceAttackPawn(attacker, target);
+            Job job = JobMaker.MakeJob(JobDefOf.Goto, moveCell);
+            job.expiryInterval = Rand.RangeInclusive(180, 300);
+            job.checkOverrideOnExpire = true;
 
-            try
-            {
-                Job job = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
-                job.expiryInterval = Rand.RangeInclusive(180, 360);
-                job.checkOverrideOnExpire = true;
-
-                attacker.jobs.TryTakeOrderedJob(job, JobTag.Misc);
-            }
-            catch (Exception ex)
-            {
-                Log.Warning("[Signal Interceptor] Failed to force attack job for " +
-                            attacker.LabelShort + ": " + ex);
-            }
+            attacker.jobs.TryTakeOrderedJob(job, JobTag.Misc);
         }
 
         private void DeactivateRogueMechanitorFaction(Faction faction)
