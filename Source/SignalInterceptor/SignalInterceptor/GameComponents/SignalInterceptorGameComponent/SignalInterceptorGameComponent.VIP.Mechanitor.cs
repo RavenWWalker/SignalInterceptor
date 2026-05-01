@@ -1438,7 +1438,7 @@ namespace SignalInterceptor
             }
 
             List<Pawn> validPawns = pawns
-                .Where(p => p != null && !p.Dead && p.Spawned && p.Map == map)
+                .Where(p => p != null && !p.Dead && !p.Downed && p.Spawned && p.Map == map)
                 .ToList();
 
             if (validPawns.NullOrEmpty())
@@ -1450,50 +1450,27 @@ namespace SignalInterceptor
             {
                 try
                 {
-                    Lord oldLord = pawn.GetLord();
-                    if (oldLord != null)
+                    ForceMechanitorPawnNoFlee(pawn, map);
+
+                    if (pawn.jobs != null && pawn.CurJob != null)
                     {
-                        oldLord.RemovePawn(pawn);
+                        pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                    }
+
+                    Pawn target = FindNearestPlayerPawnForAttack(pawn, map);
+                    if (target != null)
+                    {
+                        TryForceAttackPawn(pawn, target);
                     }
                 }
-                catch
+                catch (System.Exception ex)
                 {
-                    // Не критично.
+                    Log.Warning("[Signal Interceptor] Failed to start no-flee mechanitor combat for " +
+                                pawn.LabelShort + ": " + ex);
                 }
             }
 
-            LordJob_AssaultColony lordJob = new LordJob_AssaultColony(
-                faction,
-                false, // canKidnap
-                false, // canTimeoutOrFlee
-                false, // sappers
-                false, // useAvoidGridSmart
-                false  // canSteal
-            );
-
-            Lord lord = LordMaker.MakeNewLord(faction, lordJob, map, validPawns);
-
-            foreach (Pawn pawn in validPawns)
-            {
-                if (pawn == null || pawn.Dead)
-                {
-                    continue;
-                }
-
-                if (pawn.mindState == null)
-                {
-                    pawn.mindState = new Pawn_MindState(pawn);
-                }
-
-                pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
-
-                if (pawn.jobs != null && pawn.CurJob != null)
-                {
-                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
-                }
-            }
-
-            Log.Message("[Signal Interceptor] Rogue mechanitor mechanoid assault lord started. Mechs: " + validPawns.Count + ". Flee disabled.");
+            Log.Message("[Signal Interceptor] Rogue mechanitor no-flee combat started. Pawns: " + validPawns.Count + ".");
         }
 
         private void EnforceMechanitorSignalCombat(VIPSiteData data)
@@ -1538,22 +1515,15 @@ namespace SignalInterceptor
                 return;
             }
 
-            if (pawn.mindState == null)
-            {
-                pawn.mindState = new Pawn_MindState(pawn);
-            }
+            ForceMechanitorPawnNoFlee(pawn, map);
 
-            bool badJob = IsFleeOrExitJob(pawn.CurJob);
-            bool badDuty = IsFleeOrExitDuty(pawn.mindState.duty);
+            bool badJob =
+                IsFleeOrExitJob(pawn.CurJob) ||
+                IsSuspiciousMapEdgeGotoJob(pawn, map);
 
             if (badJob && pawn.jobs != null)
             {
                 pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
-            }
-
-            if (badDuty || pawn.mindState.duty == null)
-            {
-                pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
             }
 
             Pawn target = FindNearestPlayerPawnForAttack(pawn, map);
@@ -1568,6 +1538,83 @@ namespace SignalInterceptor
                 TryForceAttackPawn(pawn, target);
             }
         }
+
+        private void ForceMechanitorPawnNoFlee(Pawn pawn, Map map)
+        {
+            if (pawn == null || pawn.Dead || pawn.Downed || map == null)
+            {
+                return;
+            }
+
+            if (pawn.mindState == null)
+            {
+                pawn.mindState = new Pawn_MindState(pawn);
+            }
+
+            try
+            {
+                Lord lord = pawn.GetLord();
+                if (lord != null)
+                {
+                    lord.RemovePawn(pawn);
+                }
+            }
+            catch
+            {
+                // Не критично. Главное — не дать Lord'у увести пешку с карты.
+            }
+
+            pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
+
+            try
+            {
+                System.Reflection.BindingFlags flags =
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic;
+
+                System.Reflection.FieldInfo field = pawn.mindState.GetType().GetField("canFleeIndividual", flags);
+
+                if (field != null && field.FieldType == typeof(bool))
+                {
+                    field.SetValue(pawn.mindState, false);
+                }
+            }
+            catch
+            {
+                // В разных версиях RimWorld поле может отличаться. Если его нет — просто игнорируем.
+            }
+        }
+
+        private bool IsSuspiciousMapEdgeGotoJob(Pawn pawn, Map map)
+        {
+            if (pawn == null || map == null || pawn.CurJob == null || pawn.CurJob.def == null)
+            {
+                return false;
+            }
+
+            Job job = pawn.CurJob;
+
+            if (job.def != JobDefOf.Goto)
+            {
+                return false;
+            }
+
+            if (!job.targetA.IsValid)
+            {
+                return false;
+            }
+
+            IntVec3 cell = job.targetA.Cell;
+
+            if (!cell.IsValid || !cell.InBounds(map))
+            {
+                return false;
+            }
+
+            return cell.CloseToEdge(map, 5);
+        }
+
 
         private Pawn FindNearestPlayerPawnForAttack(Pawn attacker, Map map)
         {
@@ -1594,6 +1641,9 @@ namespace SignalInterceptor
                 return true;
 
             if (IsFleeOrExitJob(curJob))
+                return true;
+
+            if (attacker.Map != null && IsSuspiciousMapEdgeGotoJob(attacker, attacker.Map))
                 return true;
 
             string defName = curJob.def?.defName ?? "";

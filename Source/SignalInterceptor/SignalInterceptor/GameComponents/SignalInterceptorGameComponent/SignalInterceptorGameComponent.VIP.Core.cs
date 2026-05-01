@@ -120,7 +120,14 @@ namespace SignalInterceptor
             switch (data.subtype)
             {
                 case VIPSubtype.DoppelgangerVIP:
+                    Find.LetterStack.ReceiveLetter(
+                        "SI_VIP_CompletedTitle".Translate(),
+                        "SI_VIP_CompletedText".Translate(),
+                        LetterDefOf.PositiveEvent
+                    );
+
                     GiveVIPVictoryReward();
+
                     DeactivateDoppelgangerFaction(data.enemyFaction);
                     data.enemyFaction = null;
                     break;
@@ -147,6 +154,7 @@ namespace SignalInterceptor
 
             Log.Message("[Signal Interceptor] VIP quest completed. Subtype=" + data.subtype);
         }
+
         private void FailVIPQuest(VIPSiteData data, string reasonKey)
         {
             if (data == null || data.rewardGiven)
@@ -373,24 +381,10 @@ namespace SignalInterceptor
 
                     if (!enemiesAlive)
                     {
-                        data.rewardGiven = true;
-
-                        if (data.subtype == VIPSubtype.DoppelgangerVIP)
-                        {
-                            GiveVIPVictoryReward();
-                            DeactivateDoppelgangerFaction(data.enemyFaction);
-                            data.enemyFaction = null;
-                        }
-
-                        if (data.subtype == VIPSubtype.MechanitorSignalVIP)
-                        {
-                            DeactivateRogueMechanitorFaction(data.enemyFaction);
-                            data.enemyFaction = null;
-                        }
+                        CompleteVIPQuest(data);
                     }
                 }
             }
         }
-
     }
 }
