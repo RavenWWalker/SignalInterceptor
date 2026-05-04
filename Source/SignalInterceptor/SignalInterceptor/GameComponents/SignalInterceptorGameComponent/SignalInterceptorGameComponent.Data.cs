@@ -37,6 +37,12 @@ namespace SignalInterceptor
 
         public IntVec3 signalCampCenter = IntVec3.Invalid;
 
+        // Psycaster VIP
+        public Pawn psycasterPawn;
+        public bool psycasterDelivered;
+        public bool psycasterDestabilized;
+        public bool psycasterWasShocked;
+
         public void ExposeData()
         {
             Scribe_References.Look(ref site, "site");
@@ -48,6 +54,11 @@ namespace SignalInterceptor
             Scribe_Values.Look(ref rewardGiven, "rewardGiven", false);
             Scribe_Values.Look(ref signalCampCenter, "signalCampCenter", IntVec3.Invalid);
             Scribe_Values.Look(ref expireTick, "expireTick", -1);
+
+            Scribe_References.Look(ref psycasterPawn, "psycasterPawn");
+            Scribe_Values.Look(ref psycasterDelivered, "psycasterDelivered", false);
+            Scribe_Values.Look(ref psycasterDestabilized, "psycasterDestabilized", false);
+            Scribe_Values.Look(ref psycasterWasShocked, "psycasterWasShocked", false);
         }
     }
 

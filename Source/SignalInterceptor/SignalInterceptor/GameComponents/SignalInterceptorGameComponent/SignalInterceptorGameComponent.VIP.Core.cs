@@ -61,15 +61,19 @@ namespace SignalInterceptor
                 case VIPSubtype.ShuttleVIP:
                     SpawnShuttleVIP(map, data);
                     break;
+
                 case VIPSubtype.PsycasterVIP:
-                    SpawnShuttleVIP(map, data); // TODO: подтип 2
+                    SpawnPsycasterVIP(map, data);
                     break;
+
                 case VIPSubtype.MechanitorSignalVIP:
                     SpawnMechanitorSignalVIP(map, data);
                     break;
+
                 case VIPSubtype.PilgrimVIP:
                     SpawnShuttleVIP(map, data); // TODO: подтип 4
                     break;
+
                 case VIPSubtype.DoppelgangerVIP:
                     SpawnDoppelgangerVIP(map, data);
                     break;
@@ -249,7 +253,6 @@ namespace SignalInterceptor
 
         private void TickVIPSites()
         {
-            // VIP — каждый тик для мгновенного спавна + проверка победы/ухода с карты
             for (int i = trackedVIPSites.Count - 1; i >= 0; i--)
             {
                 VIPSiteData data = trackedVIPSites[i];
@@ -262,10 +265,6 @@ namespace SignalInterceptor
 
                 if (!data.rewardGiven && data.expireTick > 0 && Find.TickManager.TicksGame >= data.expireTick)
                 {
-                    /*
-                     * Если игрок уже вошёл на карту сайта — не схлопываем сайт.
-                     * Считаем, что цель уже обнаружена, и таймер больше не нужен.
-                     */
                     if (data.site != null && data.site.HasMap)
                     {
                         data.expireTick = -1;
@@ -300,6 +299,18 @@ namespace SignalInterceptor
 
                 if (data.site == null || !data.site.Spawned)
                 {
+                    if (data.subtype == VIPSubtype.PsycasterVIP)
+                    {
+                        if (data.psycasterPawn != null
+                            && !data.psycasterPawn.Destroyed
+                            && !data.psycasterPawn.Dead
+                            && !data.rewardGiven)
+                        {
+                            TickPsycasterVIP(data);
+                            continue;
+                        }
+                    }
+
                     if (!data.rewardGiven)
                     {
                         FailVIPQuest(data, "SI_VIP_FailedExpiredText");
@@ -321,11 +332,6 @@ namespace SignalInterceptor
                     continue;
                 }
 
-                /*
-                 * Если это сайт двойников, VIP уже был заспавнен,
-                 * но карты больше нет — игрок покинул сайт.
-                 * Значит временную фракцию нужно убрать из глобального списка.
-                 */
                 if (data.subtype == VIPSubtype.DoppelgangerVIP
                     && data.vipSpawned
                     && data.enemyFaction != null
@@ -368,10 +374,28 @@ namespace SignalInterceptor
                     EnforceMechanitorSignalCombat(data);
                 }
 
-                // Проверяем победу — карта загружена, VIP был, врагов не осталось
+                if (data.subtype == VIPSubtype.PsycasterVIP
+                    && data.vipSpawned
+                    && !data.rewardGiven
+                    && Find.TickManager.TicksGame % 60 == 0)
+                {
+                    TickPsycasterVIP(data);
+                }
+
                 if (data.vipSpawned && !data.rewardGiven && data.site.HasMap)
                 {
                     Map siteMap = data.site.Map;
+
+                    if (data.subtype == VIPSubtype.PsycasterVIP)
+                    {
+                        if (data.psycasterPawn == null || data.psycasterPawn.Destroyed || data.psycasterPawn.Dead)
+                        {
+                            FailVIPQuest(data, "SI_VIP_FailedText");
+                            continue;
+                        }
+
+                        continue;
+                    }
 
                     bool enemiesAlive = siteMap.mapPawns.AllPawnsSpawned
                         .Any(p => p.Faction != null
@@ -386,5 +410,49 @@ namespace SignalInterceptor
                 }
             }
         }
+
+        private void TickPsycasterVIP(VIPSiteData data)
+        {
+            if (data == null || data.subtype != VIPSubtype.PsycasterVIP)
+                return;
+
+            Pawn psycaster = data.psycasterPawn;
+
+            if (psycaster == null || psycaster.Destroyed)
+                return;
+
+            if (psycaster.Dead)
+            {
+                FailVIPQuest(data, "SI_VIP_FailedText");
+                return;
+            }
+
+            if (IsPsycasterDeliveredToPlayerSettlement(psycaster))
+            {
+                data.psycasterDelivered = true;
+                CompleteVIPQuest(data);
+                return;
+            }
+
+            if (psycaster.Spawned && psycaster.Map != null && psycaster.Map == data.site?.Map)
+            {
+                TickPsycasterCombatAI(psycaster, psycaster.Map);
+            }
+        }
+
+        private bool IsPsycasterDeliveredToPlayerSettlement(Pawn psycaster)
+        {
+            if (psycaster == null || psycaster.Dead || psycaster.Destroyed)
+                return false;
+
+            if (!psycaster.Spawned || psycaster.Map == null)
+                return false;
+
+            if (!psycaster.IsPrisonerOfColony)
+                return false;
+
+            return psycaster.Map.IsPlayerHome;
+        }
+
     }
 }

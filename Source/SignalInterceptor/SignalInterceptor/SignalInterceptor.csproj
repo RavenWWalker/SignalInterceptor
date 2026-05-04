@@ -73,6 +73,7 @@
     <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Core.cs" />
     <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Doppelganger.cs" />
     <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Mechanitor.cs" />
+    <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Psycaster.cs" />
     <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Shuttle.cs" />
     <Compile Include="Patches\Patch_DropShuttle_ClampCell.cs" />
     <Compile Include="Patches\Patch_FactionDialog.cs" />
