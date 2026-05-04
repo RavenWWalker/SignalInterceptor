@@ -42,6 +42,11 @@ namespace SignalInterceptor
         public bool psycasterDelivered;
         public bool psycasterDestabilized;
         public bool psycasterWasShocked;
+        public int psycasterNextCastTick = -1;
+        public bool psycasterFocusUsed;
+        public int psycasterNextDefensiveCastTick = -1;
+        public int psycasterNextWallraiseTick = -1;
+        public int psycasterNextSmokepopTick = -1;
 
         public void ExposeData()
         {
@@ -59,6 +64,11 @@ namespace SignalInterceptor
             Scribe_Values.Look(ref psycasterDelivered, "psycasterDelivered", false);
             Scribe_Values.Look(ref psycasterDestabilized, "psycasterDestabilized", false);
             Scribe_Values.Look(ref psycasterWasShocked, "psycasterWasShocked", false);
+            Scribe_Values.Look(ref psycasterNextCastTick, "psycasterNextCastTick", -1);
+            Scribe_Values.Look(ref psycasterFocusUsed, "psycasterFocusUsed", false);
+            Scribe_Values.Look(ref psycasterNextDefensiveCastTick, "psycasterNextDefensiveCastTick", -1);
+            Scribe_Values.Look(ref psycasterNextWallraiseTick, "psycasterNextWallraiseTick", -1);
+            Scribe_Values.Look(ref psycasterNextSmokepopTick, "psycasterNextSmokepopTick", -1);
         }
     }
 
