@@ -419,7 +419,10 @@ namespace SignalInterceptor
             Pawn psycaster = data.psycasterPawn;
 
             if (psycaster == null || psycaster.Destroyed)
+            {
+                FailVIPQuest(data, "SI_VIP_FailedText");
                 return;
+            }
 
             if (psycaster.Dead)
             {
@@ -431,6 +434,16 @@ namespace SignalInterceptor
             {
                 data.psycasterDelivered = true;
                 CompleteVIPQuest(data);
+                return;
+            }
+
+            if (!psycaster.Spawned)
+            {
+                if (!psycaster.IsPrisonerOfColony)
+                {
+                    FailVIPQuest(data, "SI_VIP_FailedText");
+                }
+
                 return;
             }
 

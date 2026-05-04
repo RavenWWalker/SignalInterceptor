@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+
+  <SitePartDef>
+    <defName>SI_PsycasterVIPSite</defName>
+    <label>hostile psycaster</label>
+    <description>A lone hostile psycaster hiding at the source of an intercepted signal.</description>
+
+    <siteTexture>World/WorldObjects/Sites/Camp</siteTexture>
+    <expandingIconTexture>World/WorldObjects/Sites/Camp</expandingIconTexture>
+
+    <approachOrderString>Confront the psycaster</approachOrderString>
+    <approachingReportString>Approaching the hostile psycaster</approachingReportString>
+
+    <wantsThreatPoints>false</wantsThreatPoints>
+    <defaultHidden>false</defaultHidden>
+  </SitePartDef>
+
+</Defs>

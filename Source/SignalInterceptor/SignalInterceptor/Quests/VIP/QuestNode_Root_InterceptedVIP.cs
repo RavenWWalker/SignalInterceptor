@@ -1278,6 +1278,9 @@ namespace SignalInterceptor
                 case VIPSubtype.MechanitorSignalVIP:
                     return DefDatabase<SitePartDef>.GetNamed("SI_MechanitorSignalSite");
 
+                case VIPSubtype.PsycasterVIP:
+                    return DefDatabase<SitePartDef>.GetNamed("SI_PsycasterVIPSite");
+
                 case VIPSubtype.ShuttleVIP:
                     return DefDatabase<SitePartDef>.GetNamed("SI_ShuttleVIPSite");
 

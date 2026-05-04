@@ -6,6 +6,7 @@ using System.Reflection;
 using UnityEngine;
 using Verse;
 using Verse.AI;
+using Verse.AI.Group;
 
 namespace SignalInterceptor
 {
@@ -125,8 +126,7 @@ namespace SignalInterceptor
                 SetSkillLevel(pawn, SkillDefOf.Intellectual, Mathf.Clamp(10 + tier, 12, 20), Passion.Major);
             }
 
-            AddPsycasterTraitIfPossible(pawn, "PsychicSensitivity");
-            AddPsycasterTraitIfPossible(pawn, "PsychicallyHypersensitive");
+            AddPsycasterTraitIfPossible(pawn, "PsychicSensitivity", 2);
 
             AddOrSetPsycasterPsylinkLevel(pawn, psylinkLevel);
             GivePsycasterVIPAbilities(pawn, tier);
@@ -148,7 +148,7 @@ namespace SignalInterceptor
                 skill.passion = passion;
         }
 
-        private void AddPsycasterTraitIfPossible(Pawn pawn, string traitDefName)
+        private void AddPsycasterTraitIfPossible(Pawn pawn, string traitDefName, int degree)
         {
             if (pawn?.story?.traits == null || traitDefName.NullOrEmpty())
                 return;
@@ -158,16 +158,29 @@ namespace SignalInterceptor
             if (traitDef == null)
                 return;
 
-            if (pawn.story.traits.HasTrait(traitDef))
-                return;
-
             try
             {
-                pawn.story.traits.GainTrait(new Trait(traitDef));
+                List<Trait> existing = pawn.story.traits.allTraits
+                    .Where(t => t != null && t.def == traitDef)
+                    .ToList();
+
+                foreach (Trait trait in existing)
+                {
+                    pawn.story.traits.RemoveTrait(trait);
+                }
+
+                pawn.story.traits.GainTrait(new Trait(traitDef, degree));
             }
-            catch
+            catch (System.Exception ex)
             {
-                // Некоторые трейты могут конфликтовать. Не критично.
+                Log.Warning("[Signal Interceptor] Failed to add psycaster trait. Trait=" +
+                            traitDefName +
+                            " | Degree=" +
+                            degree +
+                            " | Pawn=" +
+                            pawn.LabelShort +
+                            " | Exception=" +
+                            ex);
             }
         }
 
@@ -374,8 +387,16 @@ namespace SignalInterceptor
             if (psycaster.Faction == Faction.OfPlayer)
                 return;
 
-            if (Find.TickManager.TicksGame % 180 != psycaster.thingIDNumber % 180)
+            ForcePsycasterNoFlee(psycaster, map);
+
+            // TickPsycasterVIP вызывается раз в 60 тиков.
+            // Кастуем примерно раз в 180 тиков, без привязки к thingIDNumber,
+            // иначе окно каста может никогда не совпасть.
+            if (Find.TickManager.TicksGame % 180 != 0)
+            {
+                TryForcePsycasterAttackNearestPlayerPawn(psycaster, map);
                 return;
+            }
 
             RefillPsycasterPsyfocus(psycaster);
 
@@ -392,25 +413,27 @@ namespace SignalInterceptor
 
             Pawn nearest = targets.First();
 
-            List<Pawn> clusteredTargets = targets
+            List<Pawn> closeTargets = targets
                 .Where(p => p.Position.DistanceTo(psycaster.Position) <= 18f)
                 .ToList();
 
-            if (clusteredTargets.Count >= 3)
+            // Если рядом группа — сначала массовые способности.
+            if (closeTargets.Count >= 3)
             {
-                Pawn clusterCenter = clusteredTargets.RandomElement();
+                Pawn clusterTarget = closeTargets.RandomElement();
 
-                if (TryCastPsyAbility(psycaster, "VertigoPulse", clusterCenter))
+                if (TryCastPsyAbility(psycaster, "VertigoPulse", clusterTarget))
                     return;
 
-                if (TryCastPsyAbility(psycaster, "BlindingPulse", clusterCenter))
+                if (TryCastPsyAbility(psycaster, "BlindingPulse", clusterTarget))
                     return;
 
-                if (TryCastPsyAbility(psycaster, "BerserkPulse", clusterCenter))
+                if (TryCastPsyAbility(psycaster, "BerserkPulse", clusterTarget))
                     return;
             }
 
-            if (nearest.Position.DistanceTo(psycaster.Position) <= 10f)
+            // Если кто-то подошёл близко — контроль ближайшего.
+            if (nearest.Position.DistanceTo(psycaster.Position) <= 12f)
             {
                 if (TryCastPsyAbility(psycaster, "Stun", nearest))
                     return;
@@ -422,10 +445,8 @@ namespace SignalInterceptor
                     return;
             }
 
+            // Иначе давим случайную цель.
             Pawn randomTarget = targets.RandomElement();
-
-            if (TryCastPsyAbility(psycaster, "Blind", randomTarget))
-                return;
 
             if (TryCastPsyAbility(psycaster, "Burden", randomTarget))
                 return;
@@ -433,7 +454,67 @@ namespace SignalInterceptor
             if (TryCastPsyAbility(psycaster, "Stun", randomTarget))
                 return;
 
+            if (TryCastPsyAbility(psycaster, "BlindingPulse", randomTarget))
+                return;
+
+            if (TryCastPsyAbility(psycaster, "VertigoPulse", randomTarget))
+                return;
+
             TryForcePsycasterAttackNearestPlayerPawn(psycaster, map);
+        }
+
+        private void ForcePsycasterNoFlee(Pawn pawn, Map map)
+        {
+            if (pawn == null || pawn.Dead || pawn.Downed || map == null)
+                return;
+
+            if (pawn.mindState == null)
+            {
+                pawn.mindState = new Pawn_MindState(pawn);
+            }
+
+            try
+            {
+                Lord lord = pawn.GetLord();
+                if (lord != null)
+                {
+                    lord.RemovePawn(pawn);
+                }
+            }
+            catch
+            {
+                // Не критично.
+            }
+
+            pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
+
+            bool badJob =
+                IsFleeOrExitJob(pawn.CurJob) ||
+                IsSuspiciousMapEdgeGotoJob(pawn, map);
+
+            if (badJob && pawn.jobs != null)
+            {
+                pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+            }
+
+            try
+            {
+                System.Reflection.BindingFlags flags =
+                    System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic;
+
+                System.Reflection.FieldInfo field = pawn.mindState.GetType().GetField("canFleeIndividual", flags);
+
+                if (field != null && field.FieldType == typeof(bool))
+                {
+                    field.SetValue(pawn.mindState, false);
+                }
+            }
+            catch
+            {
+                // Поле может отличаться между версиями.
+            }
         }
 
         private bool TryCastPsyAbility(Pawn caster, string abilityDefName, Pawn target)
@@ -442,6 +523,9 @@ namespace SignalInterceptor
                 return false;
 
             if (caster.abilities == null)
+                return false;
+
+            if (!caster.Spawned || !target.Spawned || caster.Map != target.Map)
                 return false;
 
             AbilityDef abilityDef = DefDatabase<AbilityDef>.GetNamedSilentFail(abilityDefName);
@@ -459,6 +543,11 @@ namespace SignalInterceptor
                 if (IsAbilityOnCooldown(ability))
                     return false;
 
+                LocalTargetInfo targetInfo = new LocalTargetInfo(target);
+
+                if (!CanPsyAbilityApplyOn(ability, targetInfo, targetInfo))
+                    return false;
+
                 MethodInfo activateMethod = ability.GetType()
                     .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                     .FirstOrDefault(m =>
@@ -467,6 +556,7 @@ namespace SignalInterceptor
                             return false;
 
                         ParameterInfo[] args = m.GetParameters();
+
                         return args.Length == 2
                             && args[0].ParameterType == typeof(LocalTargetInfo)
                             && args[1].ParameterType == typeof(LocalTargetInfo);
@@ -475,12 +565,10 @@ namespace SignalInterceptor
                 if (activateMethod == null)
                     return false;
 
-                LocalTargetInfo targetInfo = new LocalTargetInfo(target);
-
                 activateMethod.Invoke(ability, new object[]
                 {
-                    targetInfo,
-                    targetInfo
+            targetInfo,
+            targetInfo
                 });
 
                 Log.Message("[Signal Interceptor] Psycaster VIP cast " +
@@ -490,9 +578,57 @@ namespace SignalInterceptor
 
                 return true;
             }
+            catch (System.Exception ex)
+            {
+                Log.Warning("[Signal Interceptor] Psycaster VIP failed to cast " +
+                            abilityDefName +
+                            " on " +
+                            target.LabelShort +
+                            ". Exception=" +
+                            ex);
+
+                return false;
+            }
+        }
+
+        private bool CanPsyAbilityApplyOn(object ability, LocalTargetInfo target, LocalTargetInfo destination)
+        {
+            if (ability == null)
+                return false;
+
+            try
+            {
+                MethodInfo canApplyMethod = ability.GetType()
+                    .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .FirstOrDefault(m =>
+                    {
+                        if (m.Name != "CanApplyOn")
+                            return false;
+
+                        ParameterInfo[] args = m.GetParameters();
+
+                        return args.Length == 2
+                            && args[0].ParameterType == typeof(LocalTargetInfo)
+                            && args[1].ParameterType == typeof(LocalTargetInfo);
+                    });
+
+                if (canApplyMethod == null)
+                    return true;
+
+                object result = canApplyMethod.Invoke(ability, new object[]
+                {
+            target,
+            destination
+                });
+
+                if (result is bool canApply)
+                    return canApply;
+
+                return true;
+            }
             catch
             {
-                return false;
+                return true;
             }
         }
 
@@ -552,19 +688,35 @@ namespace SignalInterceptor
                     BindingFlags.Public |
                     BindingFlags.NonPublic;
 
-                PropertyInfo property = ability.GetType().GetProperty("CooldownTicksRemaining", flags);
+                PropertyInfo cooldownTicksRemaining = ability.GetType().GetProperty("CooldownTicksRemaining", flags);
 
-                if (property != null && property.PropertyType == typeof(int))
+                if (cooldownTicksRemaining != null && cooldownTicksRemaining.PropertyType == typeof(int))
                 {
-                    int value = (int)property.GetValue(ability, null);
+                    int value = (int)cooldownTicksRemaining.GetValue(ability, null);
                     return value > 0;
                 }
 
-                FieldInfo field = ability.GetType().GetField("cooldownTicks", flags);
+                PropertyInfo cooldownTicksLeft = ability.GetType().GetProperty("CooldownTicksLeft", flags);
 
-                if (field != null && field.FieldType == typeof(int))
+                if (cooldownTicksLeft != null && cooldownTicksLeft.PropertyType == typeof(int))
                 {
-                    int value = (int)field.GetValue(ability);
+                    int value = (int)cooldownTicksLeft.GetValue(ability, null);
+                    return value > 0;
+                }
+
+                FieldInfo cooldownTicks = ability.GetType().GetField("cooldownTicks", flags);
+
+                if (cooldownTicks != null && cooldownTicks.FieldType == typeof(int))
+                {
+                    int value = (int)cooldownTicks.GetValue(ability);
+                    return value > 0;
+                }
+
+                FieldInfo cooldownTicksRemainingField = ability.GetType().GetField("cooldownTicksRemaining", flags);
+
+                if (cooldownTicksRemainingField != null && cooldownTicksRemainingField.FieldType == typeof(int))
+                {
+                    int value = (int)cooldownTicksRemainingField.GetValue(ability);
                     return value > 0;
                 }
             }
@@ -628,11 +780,7 @@ namespace SignalInterceptor
             if (target == null)
                 return;
 
-            Job job = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
-            job.expiryInterval = Rand.RangeInclusive(240, 420);
-            job.checkOverrideOnExpire = true;
-
-            attacker.jobs.TryTakeOrderedJob(job, JobTag.Misc);
+            TryForceAttackPawn(attacker, target);
         }
     }
 }
