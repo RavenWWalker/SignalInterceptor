@@ -377,7 +377,7 @@ namespace SignalInterceptor
                 if (data.subtype == VIPSubtype.PsycasterVIP
                     && data.vipSpawned
                     && !data.rewardGiven
-                    && Find.TickManager.TicksGame % 60 == 0)
+                    && Find.TickManager.TicksGame % 15 == 0)
                 {
                     TickPsycasterVIP(data);
                 }

@@ -89,6 +89,7 @@ namespace SignalInterceptor
             }
 
             data.psycasterPawn = psycaster;
+            TryApplyInitialPsycasterBuffs(data, psycaster);
 
             if (psycaster.mindState == null)
             {
@@ -113,6 +114,24 @@ namespace SignalInterceptor
                         " | Psylink=" + psylinkLevel);
         }
 
+        private void TryApplyInitialPsycasterBuffs(VIPSiteData data, Pawn psycaster)
+        {
+            if (data == null || psycaster == null)
+                return;
+
+            if (data.psycasterFocusUsed)
+                return;
+
+            if (TryCastSelfPsyAbility(psycaster, "Focus"))
+            {
+                data.psycasterFocusUsed = true;
+                Log.Message("[Signal Interceptor] Psycaster VIP applied initial Focus.");
+                return;
+            }
+
+            data.psycasterFocusUsed = true;
+        }
+
         private void PreparePsycasterVIPPawn(Pawn pawn, int tier, int psylinkLevel)
         {
             if (pawn == null)
@@ -129,7 +148,7 @@ namespace SignalInterceptor
             AddPsycasterTraitIfPossible(pawn, "PsychicSensitivity", 2);
 
             AddOrSetPsycasterPsylinkLevel(pawn, psylinkLevel);
-            GivePsycasterVIPAbilities(pawn, tier);
+            GivePsycasterVIPAbilities(pawn, psylinkLevel);
             GivePsycasterVIPGear(pawn, tier);
             RefillPsycasterPsyfocus(pawn);
         }
@@ -266,7 +285,7 @@ namespace SignalInterceptor
             }
         }
 
-        private void GivePsycasterVIPAbilities(Pawn pawn, int tier)
+        private void GivePsycasterVIPAbilities(Pawn pawn, int psylinkLevel)
         {
             if (pawn?.abilities == null)
             {
@@ -274,46 +293,67 @@ namespace SignalInterceptor
                 return;
             }
 
-            List<string> abilityNames = new List<string>
-    {
-        "Focus",
-        "Stun",
-        "BlindingPulse",
-        "VertigoPulse"
-    };
+            psylinkLevel = Mathf.Clamp(psylinkLevel, 1, 6);
 
-            if (tier >= 4)
+            List<string> abilityNames = new List<string>();
+
+            if (psylinkLevel >= 1)
+            {
+                abilityNames.AddRange(new[]
+                {
+            "Stun"
+        });
+            }
+
+            if (psylinkLevel >= 2)
+            {
+                abilityNames.AddRange(new[]
+                {
+            "BlindingPulse"
+        });
+            }
+
+            if (psylinkLevel >= 3)
             {
                 abilityNames.AddRange(new[]
                 {
             "Beckon",
-            "Skip",
-            "Smokepop",
-            "ChaosSkip"
+            "ChaosSkip",
+            "VertigoPulse"
         });
             }
 
-            if (tier >= 6)
+            if (psylinkLevel >= 4)
+            {
+                abilityNames.AddRange(new[]
+                {
+            "Smokepop",
+            "Skip",
+            "Focus"
+        });
+            }
+
+            if (psylinkLevel >= 5)
             {
                 abilityNames.AddRange(new[]
                 {
             "Berserk",
-            "Invisibility",
             "Wallraise"
         });
             }
 
-            if (tier >= 8)
+            if (psylinkLevel >= 6)
             {
                 abilityNames.AddRange(new[]
                 {
+            "Invisibility",
             "BerserkPulse",
             "MassChaosSkip",
             "ManhunterPulse"
         });
             }
 
-            foreach (string defName in abilityNames)
+            foreach (string defName in abilityNames.Distinct())
             {
                 AbilityDef abilityDef = FindAbilityDefByPossibleName(defName);
 
@@ -336,6 +376,7 @@ namespace SignalInterceptor
                                 "Pawn=" + pawn.LabelShort +
                                 " | Requested=" + defName +
                                 " | Def=" + abilityDef.defName +
+                                " | Psylink=" + psylinkLevel +
                                 " | FoundAfterGain=" + (ability != null));
                 }
                 catch (System.Exception ex)
@@ -413,74 +454,522 @@ namespace SignalInterceptor
             }
         }
 
-        private void TickPsycasterCombatAI(VIPSiteData data, Pawn psycaster, Map map)
+        private void TickPsycasterCombatAI(VIPSiteData data, Pawn psycaster)
         {
-            if (data == null || psycaster == null || map == null)
+            if (data == null || psycaster == null)
+            {
                 return;
+            }
 
-            if (psycaster.Dead || psycaster.Downed || !psycaster.Spawned)
+            if (psycaster.Destroyed || psycaster.Dead || psycaster.Downed || !psycaster.Spawned || psycaster.Map == null)
+            {
                 return;
+            }
 
-            if (psycaster.Faction == Faction.OfPlayer)
-                return;
+            Map map = psycaster.Map;
+            int tick = Find.TickManager.TicksGame;
 
             ForcePsycasterNoFlee(psycaster, map);
 
-            List<Pawn> targets = map.mapPawns.AllPawnsSpawned
-                .Where(p => p != null)
-                .Where(p => p.Faction == Faction.OfPlayer)
-                .Where(p => !p.Dead && !p.Downed)
-                .Where(p => p.Spawned && p.Map == map)
-                .OrderBy(p => p.Position.DistanceTo(psycaster.Position))
-                .ToList();
-
-            if (targets.Count == 0)
-                return;
-
-            int currentTick = Find.TickManager.TicksGame;
-
-            if (data.psycasterNextCastTick < 0)
-                data.psycasterNextCastTick = currentTick + Rand.RangeInclusive(60, 120);
-
-            if (data.psycasterNextDefensiveCastTick < 0)
-                data.psycasterNextDefensiveCastTick = currentTick;
-
-            if (data.psycasterNextWallraiseTick < 0)
-                data.psycasterNextWallraiseTick = currentTick;
-
-            if (data.psycasterNextSmokepopTick < 0)
-                data.psycasterNextSmokepopTick = currentTick;
-
-            bool casted = false;
-
-            // Экстренная реакция может сработать раньше обычного кулдауна.
-            casted = TryPsycasterEmergencyDefense(data, psycaster, map, targets);
-
-            if (casted)
+            List<Pawn> targets = GetValidPsycasterCombatTargets(psycaster, map);
+            if (targets.NullOrEmpty())
             {
-                ApplyPsycasterCastPause(psycaster);
+                TryAttackPlayerShuttleOrBuilding(psycaster);
                 return;
             }
 
-            if (currentTick < data.psycasterNextCastTick)
+            Pawn nearest = GetNearestPsycasterTarget(psycaster, targets);
+
+            // 1. Если уже есть melee-commit после Stun/Invisibility — не даём AI гулять.
+            if (TryContinuePsycasterMeleeCommit(data, psycaster, targets))
             {
-                TryForcePsycasterAttackNearestPlayerPawn(psycaster, map);
                 return;
             }
 
-            RefillPsycasterPsyfocus(psycaster);
+            bool invisible = IsPsycasterInvisibleOrRecentlyInvisible(data, psycaster);
 
-            casted = TryPsycasterCastBestAbility(data, psycaster, map, targets);
-
-            if (casted)
+            // 2. Если пси-кастер невидим — он не должен ходить вокруг цели.
+            // Он обязан сразу пытаться Stun -> melee.
+            if (invisible && nearest != null)
             {
-                data.psycasterNextCastTick = currentTick + Rand.RangeInclusive(360, 600);
-                ApplyPsycasterCastPause(psycaster);
+                ForcePsycasterMeleeCommit(data, psycaster, nearest, 900);
+
+                if (TryPsycasterStunThenMelee(data, psycaster, nearest))
+                {
+                    return;
+                }
+
+                TryForcePsycasterMeleeAttack(psycaster, nearest);
                 return;
             }
 
-            data.psycasterNextCastTick = currentTick + Rand.RangeInclusive(120, 240);
-            TryForcePsycasterAttackNearestPlayerPawn(psycaster, map);
+            // 3. Если враг уже в зоне ближнего боя или уже оглушён — сразу добиваем.
+            Pawn closeOrStunnedTarget = FindCloseOrStunnedPsycasterTarget(psycaster, targets);
+            if (closeOrStunnedTarget != null)
+            {
+                if (TryPsycasterStunThenMelee(data, psycaster, closeOrStunnedTarget))
+                {
+                    return;
+                }
+
+                ForcePsycasterMeleeCommit(data, psycaster, closeOrStunnedTarget, 600);
+                TryForcePsycasterMeleeAttack(psycaster, closeOrStunnedTarget);
+                return;
+            }
+
+            // 4. Обычная логика кастов.
+            if (tick >= data.psycasterNextCastTick)
+            {
+                if (!data.psycasterFocusUsed && TryCastSelfPsyAbility(data, psycaster, "Focus"))
+                {
+                    data.psycasterFocusUsed = true;
+                    data.psycasterNextCastTick = tick + Rand.RangeInclusive(240, 360);
+                    return;
+                }
+
+                if (TryPsycasterEmergencyDefense(data, psycaster, targets))
+                {
+                    return;
+                }
+
+                Pawn nearest = GetNearestPsycasterTarget(psycaster, targets);
+
+                if (nearest != null && TryCastInvisibilityAndCommit(data, psycaster, nearest))
+                {
+                    return true;
+                }
+            }
+
+            // 5. Если ничего не кастует — не стоим, не ждём, не Wander.
+            // Идём к выбранной цели.
+            if (nearest != null)
+            {
+                InterruptBadPsycasterCombatJob(psycaster, nearest);
+                TryForcePsycasterMeleeAttack(psycaster, nearest);
+            }
+        }
+
+        private bool TryCastInvisibilityAndCommit(VIPSiteData data, Pawn psycaster, Pawn target)
+        {
+            if (data == null || psycaster == null || target == null)
+            {
+                return false;
+            }
+
+            if (psycaster.Destroyed || psycaster.Dead || psycaster.Downed || !psycaster.Spawned)
+            {
+                return false;
+            }
+
+            if (target.Destroyed || target.Dead || target.Downed || !target.Spawned)
+            {
+                return false;
+            }
+
+            int tick = Find.TickManager.TicksGame;
+
+            bool casted = TryCastSelfPsyAbility(data, psycaster, "Invisibility");
+            if (!casted)
+            {
+                return false;
+            }
+
+            data.psycasterLastInvisibilityTick = tick;
+            data.psycasterNextCastTick = tick + Rand.RangeInclusive(60, 120);
+
+            ForcePsycasterMeleeCommit(data, psycaster, target, 900);
+
+            // После невидимости сразу пытаемся дать Stun.
+            // Если Stun недоступен — всё равно идём в melee.
+            TryPsycasterStunThenMelee(data, psycaster, target);
+
+            return true;
+        }
+
+        private List<Pawn> GetValidPsycasterCombatTargets(Pawn psycaster, Map map)
+        {
+            List<Pawn> result = new List<Pawn>();
+
+            if (psycaster == null || map == null)
+            {
+                return result;
+            }
+
+            foreach (Pawn pawn in map.mapPawns.AllPawnsSpawned)
+            {
+                if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed)
+                {
+                    continue;
+                }
+
+                if (pawn.Faction != Faction.OfPlayer)
+                {
+                    continue;
+                }
+
+                if (!pawn.Position.InBounds(map))
+                {
+                    continue;
+                }
+
+                result.Add(pawn);
+            }
+
+            return result;
+        }
+
+        private Pawn GetNearestPsycasterTarget(Pawn psycaster, List<Pawn> targets)
+        {
+            if (psycaster == null || targets.NullOrEmpty())
+            {
+                return null;
+            }
+
+            Pawn best = null;
+            float bestDist = float.MaxValue;
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                Pawn target = targets[i];
+                if (target == null || target.Destroyed || target.Dead || target.Downed)
+                {
+                    continue;
+                }
+
+                float dist = psycaster.Position.DistanceTo(target.Position);
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    best = target;
+                }
+            }
+
+            return best;
+        }
+
+        private Pawn FindCloseOrStunnedPsycasterTarget(Pawn psycaster, List<Pawn> targets)
+        {
+            if (psycaster == null || targets.NullOrEmpty())
+            {
+                return null;
+            }
+
+            Pawn best = null;
+            float bestScore = float.MaxValue;
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                Pawn target = targets[i];
+                if (target == null || target.Destroyed || target.Dead || target.Downed)
+                {
+                    continue;
+                }
+
+                float dist = psycaster.Position.DistanceTo(target.Position);
+                bool stunned = IsPawnStunned(target);
+
+                if (!stunned && dist > 5.5f)
+                {
+                    continue;
+                }
+
+                float score = stunned ? dist - 20f : dist;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = target;
+                }
+            }
+
+            return best;
+        }
+
+        private bool IsPawnStunned(Pawn pawn)
+        {
+            if (pawn == null || pawn.stances == null || pawn.stances.stunner == null)
+            {
+                return false;
+            }
+
+            return pawn.stances.stunner.Stunned;
+        }
+
+        private bool IsPsycasterInvisibleOrRecentlyInvisible(VIPSiteData data, Pawn psycaster)
+        {
+            if (psycaster == null)
+            {
+                return false;
+            }
+
+            HediffDef invisibilityDef = DefDatabase<HediffDef>.GetNamedSilentFail("PsychicInvisibility");
+            if (invisibilityDef != null && psycaster.health?.hediffSet?.HasHediff(invisibilityDef) == true)
+            {
+                return true;
+            }
+
+            if (data != null)
+            {
+                int tick = Find.TickManager.TicksGame;
+                if (tick < data.psycasterLastInvisibilityTick + 900)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ForcePsycasterMeleeCommit(VIPSiteData data, Pawn psycaster, Pawn target, int durationTicks)
+        {
+            if (data == null || psycaster == null || target == null)
+            {
+                return;
+            }
+
+            data.psycasterMeleeCommitTargetThingId = target.thingIDNumber;
+            data.psycasterMeleeCommitUntilTick = Find.TickManager.TicksGame + Mathf.Max(60, durationTicks);
+        }
+
+        private bool TryContinuePsycasterMeleeCommit(VIPSiteData data, Pawn psycaster, List<Pawn> targets)
+        {
+            if (data == null || psycaster == null || targets.NullOrEmpty())
+            {
+                return false;
+            }
+
+            int tick = Find.TickManager.TicksGame;
+
+            if (data.psycasterMeleeCommitUntilTick <= tick)
+            {
+                data.psycasterMeleeCommitTargetThingId = -1;
+                data.psycasterMeleeCommitUntilTick = -1;
+                return false;
+            }
+
+            Pawn target = null;
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                Pawn candidate = targets[i];
+                if (candidate != null && candidate.thingIDNumber == data.psycasterMeleeCommitTargetThingId)
+                {
+                    target = candidate;
+                    break;
+                }
+            }
+
+            if (target == null || target.Destroyed || target.Dead || target.Downed)
+            {
+                data.psycasterMeleeCommitTargetThingId = -1;
+                data.psycasterMeleeCommitUntilTick = -1;
+                return false;
+            }
+
+            InterruptBadPsycasterCombatJob(psycaster, target);
+            TryForcePsycasterMeleeAttack(psycaster, target);
+            return true;
+        }
+
+        private bool TryPsycasterStunThenMelee(VIPSiteData data, Pawn psycaster, Pawn target)
+        {
+            if (data == null || psycaster == null || target == null)
+            {
+                return false;
+            }
+
+            if (psycaster.Destroyed || psycaster.Dead || psycaster.Downed || !psycaster.Spawned)
+            {
+                return false;
+            }
+
+            if (target.Destroyed || target.Dead || target.Downed || !target.Spawned)
+            {
+                return false;
+            }
+
+            if (psycaster.Map != target.Map)
+            {
+                return false;
+            }
+
+            int tick = Find.TickManager.TicksGame;
+
+            ForcePsycasterMeleeCommit(data, psycaster, target, 720);
+
+            bool targetAlreadyStunned = IsPawnStunned(target);
+
+            if (!targetAlreadyStunned && tick >= data.psycasterNextCastTick)
+            {
+                bool casted = TryCastPsyAbilityControlled(data, psycaster, "Stun", target);
+
+                if (casted)
+                {
+                    data.psycasterNextCastTick = tick + Rand.RangeInclusive(90, 150);
+                    InterruptBadPsycasterCombatJob(psycaster, target);
+                    TryForcePsycasterMeleeAttack(psycaster, target);
+                    return true;
+                }
+            }
+
+            InterruptBadPsycasterCombatJob(psycaster, target);
+            TryForcePsycasterMeleeAttack(psycaster, target);
+            return true;
+        }
+
+        private void InterruptBadPsycasterCombatJob(Pawn psycaster, Pawn intendedTarget)
+        {
+            if (psycaster == null || psycaster.jobs == null || psycaster.CurJob == null)
+            {
+                return;
+            }
+
+            Job job = psycaster.CurJob;
+            string defName = job.def?.defName ?? string.Empty;
+
+            bool shouldInterrupt = false;
+
+            if (IsFleeOrExitJob(job))
+            {
+                shouldInterrupt = true;
+            }
+
+            if (defName.IndexOf("Wait", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                shouldInterrupt = true;
+            }
+
+            if (defName.IndexOf("Wander", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                shouldInterrupt = true;
+            }
+
+            if (job.def == JobDefOf.Goto && intendedTarget != null)
+            {
+                float distToTarget = psycaster.Position.DistanceTo(intendedTarget.Position);
+
+                if (distToTarget <= 8f)
+                {
+                    shouldInterrupt = true;
+                }
+                else if (job.targetA.IsValid && job.targetA.Cell.DistanceTo(intendedTarget.Position) > 8f)
+                {
+                    shouldInterrupt = true;
+                }
+            }
+
+            if (shouldInterrupt)
+            {
+                psycaster.jobs.EndCurrentJob(JobCondition.InterruptForced, true);
+            }
+        }
+
+        private bool TryForcePsycasterMeleeAttack(Pawn psycaster, Pawn target)
+        {
+            if (psycaster == null || target == null)
+            {
+                return false;
+            }
+
+            if (psycaster.Destroyed || psycaster.Dead || psycaster.Downed || !psycaster.Spawned)
+            {
+                return false;
+            }
+
+            if (target.Destroyed || target.Dead || target.Downed || !target.Spawned)
+            {
+                return false;
+            }
+
+            if (psycaster.Map == null || psycaster.Map != target.Map)
+            {
+                return false;
+            }
+
+            Map map = psycaster.Map;
+
+            if (psycaster.Position.AdjacentTo8WayOrInside(target.Position))
+            {
+                if (psycaster.CurJob != null &&
+                    psycaster.CurJob.def == JobDefOf.AttackMelee &&
+                    psycaster.CurJob.targetA.Thing == target)
+                {
+                    return true;
+                }
+
+                Job attackJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+                attackJob.expiryInterval = Rand.RangeInclusive(45, 75);
+                attackJob.checkOverrideOnExpire = true;
+
+                psycaster.jobs.EndCurrentJob(JobCondition.InterruptForced, true);
+                return psycaster.jobs.TryTakeOrderedJob(attackJob, JobTag.Misc);
+            }
+
+            IntVec3 moveCell;
+            if (!TryFindMeleeCellNearTarget(psycaster, target, out moveCell))
+            {
+                return false;
+            }
+
+            if (psycaster.CurJob != null &&
+                psycaster.CurJob.def == JobDefOf.Goto &&
+                psycaster.CurJob.targetA.IsValid &&
+                psycaster.CurJob.targetA.Cell == moveCell)
+            {
+                return true;
+            }
+
+            Job gotoJob = JobMaker.MakeJob(JobDefOf.Goto, moveCell);
+            gotoJob.expiryInterval = Rand.RangeInclusive(45, 75);
+            gotoJob.checkOverrideOnExpire = true;
+
+            psycaster.jobs.EndCurrentJob(JobCondition.InterruptForced, true);
+            return psycaster.jobs.TryTakeOrderedJob(gotoJob, JobTag.Misc);
+        }
+
+        private bool TryFindMeleeCellNearTarget(Pawn psycaster, Pawn target, out IntVec3 result)
+        {
+            result = IntVec3.Invalid;
+
+            if (psycaster == null || target == null || psycaster.Map == null)
+            {
+                return false;
+            }
+
+            Map map = psycaster.Map;
+
+            foreach (IntVec3 cell in GenAdj.CellsAdjacent8Way(target))
+            {
+                if (!cell.InBounds(map))
+                {
+                    continue;
+                }
+
+                if (!cell.Standable(map))
+                {
+                    continue;
+                }
+
+                if (cell.GetFirstPawn(map) != null)
+                {
+                    continue;
+                }
+
+                if (!psycaster.CanReach(cell, PathEndMode.OnCell, Danger.Deadly))
+                {
+                    continue;
+                }
+
+                result = cell;
+                return true;
+            }
+
+            if (target.Position.InBounds(map) && psycaster.CanReach(target.Position, PathEndMode.Touch, Danger.Deadly))
+            {
+                result = target.Position;
+                return true;
+            }
+
+            return false;
         }
 
         private bool TryPsycasterCastBestAbility(VIPSiteData data, Pawn psycaster, Map map, List<Pawn> targets)
@@ -491,7 +980,7 @@ namespace SignalInterceptor
             int currentTick = Find.TickManager.TicksGame;
 
             List<Pawn> validTargets = targets
-                .Where(t => IsValidPsycastTarget(psycaster, t, 20f, requireLineOfSight: true))
+                .Where(t => IsValidPsycastTarget(psycaster, t, 22f, requireLineOfSight: true))
                 .ToList();
 
             if (validTargets.Count == 0)
@@ -513,15 +1002,11 @@ namespace SignalInterceptor
                 .Where(p => !IsRangedCombatPawn(p))
                 .ToList();
 
-            List<Pawn> closeEnemies = validTargets
-                .Where(p => p.Position.DistanceTo(psycaster.Position) <= 3.0f)
+            List<Pawn> closeEnemies = humanTargets
+                .Where(p => p.Position.DistanceTo(psycaster.Position) <= 2.2f)
                 .ToList();
 
-            List<Pawn> nearEnemies = validTargets
-                .Where(p => p.Position.DistanceTo(psycaster.Position) <= 8.0f)
-                .ToList();
-
-            // 1. Бафф Focus один раз за бой.
+            // 1. Focus, если по какой-то причине не сработал при спавне.
             if (!data.psycasterFocusUsed)
             {
                 if (TryCastSelfPsyAbility(psycaster, "Focus"))
@@ -530,11 +1015,32 @@ namespace SignalInterceptor
                     return true;
                 }
 
-                // Если способности нет или не сработала — больше не пытаемся спамить.
                 data.psycasterFocusUsed = true;
             }
 
-            // 2. Если есть животные игрока — пробуем ManhunterPulse.
+            // 2. Если один ближник уже рядом или подходит — стан и немедленная рукопашка.
+            Pawn closestMelee = meleeTargets
+                .Where(p => p.Position.DistanceTo(psycaster.Position) <= 10f)
+                .OrderBy(p => p.Position.DistanceTo(psycaster.Position))
+                .FirstOrDefault();
+
+            if (closestMelee != null && closeEnemies.Count <= 1)
+            {
+                if (TryCastPsyAbilityControlled(psycaster, "Stun", closestMelee, 18f, true, targetCell: false))
+                {
+                    TryForceAttackPawn(psycaster, closestMelee);
+                    data.psycasterNextCastTick = currentTick + Rand.RangeInclusive(180, 300);
+                    return true;
+                }
+
+                if (TryCastSafePulseOnTarget(psycaster, "BlindingPulse", closestMelee, 18f, 7f))
+                    return true;
+
+                if (TryCastSafePulseOnTarget(psycaster, "VertigoPulse", closestMelee, 18f, 7f))
+                    return true;
+            }
+
+            // 3. Животные игрока.
             if (animals.Count >= 2)
             {
                 Pawn animalCenter = animals.RandomElement();
@@ -543,10 +1049,10 @@ namespace SignalInterceptor
                     return true;
             }
 
-            // 3. Если врагов много — сначала ярость/дезориентация по группе.
+            // 4. Много людей — ярость и безопасные волны.
             if (humanTargets.Count >= 3)
             {
-                IntVec3? safeClusterCell = FindSafePulseCell(psycaster, humanTargets, 20f, 7f, minTargets: 2);
+                IntVec3? safeClusterCell = FindSafePulseCell(psycaster, humanTargets, 20f, 8f, minTargets: 2);
 
                 if (safeClusterCell.HasValue)
                 {
@@ -569,8 +1075,8 @@ namespace SignalInterceptor
                     return true;
             }
 
-            // 4. Против большого числа дальников — защита и попытка втянуть их в ближний бой.
-            if (rangedTargets.Count >= 2 || rangedTargets.Count > meleeTargets.Count)
+            // 5. Дальники. Если ближников рядом нет — пытаемся изолировать одного дальника.
+            if (rangedTargets.Count > 0 && closeEnemies.Count == 0)
             {
                 Pawn nearestRanged = rangedTargets
                     .OrderBy(p => p.Position.DistanceTo(psycaster.Position))
@@ -578,82 +1084,116 @@ namespace SignalInterceptor
 
                 if (nearestRanged != null)
                 {
-                    if (currentTick >= data.psycasterNextWallraiseTick)
+                    // Один дальник или большинство дальники — инвиз + скип к себе + стан + рукопашка.
+                    if (rangedTargets.Count == 1 || rangedTargets.Count >= meleeTargets.Count)
                     {
-                        IntVec3 wallCell;
+                        if (TryCastSelfPsyAbility(psycaster, "Invisibility"))
+                            return true;
 
-                        if (TryFindWallraiseCell(psycaster, nearestRanged, map, out wallCell))
+                        if (TrySkipEnemyToPsycaster(psycaster, nearestRanged, map))
                         {
-                            if (TryCastPsyAbilityAtCell(psycaster, "Wallraise", wallCell))
-                            {
-                                data.psycasterNextWallraiseTick = currentTick + Rand.RangeInclusive(1200, 1800);
-                                return true;
-                            }
-                        }
-
-                        data.psycasterNextWallraiseTick = currentTick + Rand.RangeInclusive(600, 900);
-                    }
-
-                    if (currentTick >= data.psycasterNextSmokepopTick)
-                    {
-                        if (TryCastSelfPsyAbility(psycaster, "Smokepop"))
-                        {
-                            data.psycasterNextSmokepopTick = currentTick + Rand.RangeInclusive(900, 1400);
+                            TryForceAttackPawn(psycaster, nearestRanged);
+                            data.psycasterNextCastTick = currentTick + Rand.RangeInclusive(180, 300);
                             return true;
                         }
 
-                        data.psycasterNextSmokepopTick = currentTick + Rand.RangeInclusive(500, 700);
+                        if (TryCastPsyAbilityControlled(psycaster, "Stun", nearestRanged, 18f, true, targetCell: false))
+                        {
+                            TryForceAttackPawn(psycaster, nearestRanged);
+                            data.psycasterNextCastTick = currentTick + Rand.RangeInclusive(180, 300);
+                            return true;
+                        }
+
+                        if (TryCastSafePulseOnTarget(psycaster, "BlindingPulse", nearestRanged, 18f, 7f))
+                            return true;
+
+                        if (TryCastSafePulseOnTarget(psycaster, "VertigoPulse", nearestRanged, 18f, 7f))
+                            return true;
+
+                        if (TryCastPsyAbilityControlled(psycaster, "Beckon", nearestRanged, 18f, true, targetCell: false))
+                            return true;
                     }
 
-                    if (TryCastPsyAbilityControlled(psycaster, "Beckon", nearestRanged, 18f, true, targetCell: false))
-                        return true;
+                    // Много дальников — защита, но не если уже рукопашка.
+                    if (rangedTargets.Count >= 2)
+                    {
+                        if (currentTick >= data.psycasterNextWallraiseTick)
+                        {
+                            IntVec3 wallCell;
 
-                    if (TrySkipEnemyToPsycaster(psycaster, nearestRanged, map))
-                        return true;
+                            if (TryFindWallraiseCell(psycaster, nearestRanged, map, out wallCell))
+                            {
+                                if (TryCastPsyAbilityAtCell(psycaster, "Wallraise", wallCell))
+                                {
+                                    data.psycasterNextWallraiseTick = currentTick + Rand.RangeInclusive(1200, 1800);
+                                    return true;
+                                }
+                            }
+
+                            data.psycasterNextWallraiseTick = currentTick + Rand.RangeInclusive(600, 900);
+                        }
+
+                        if (currentTick >= data.psycasterNextSmokepopTick)
+                        {
+                            if (TryCastSelfPsyAbility(psycaster, "Smokepop"))
+                            {
+                                data.psycasterNextSmokepopTick = currentTick + Rand.RangeInclusive(900, 1400);
+                                return true;
+                            }
+
+                            data.psycasterNextSmokepopTick = currentTick + Rand.RangeInclusive(500, 700);
+                        }
+                    }
                 }
             }
 
-            // 5. Если ближник подходит близко — Stun.
-            Pawn closestMelee = meleeTargets
-                .Where(p => p.Position.DistanceTo(psycaster.Position) <= 10f)
+            // 6. Fallback: ближайшая цель — стан и атака.
+            Pawn nearest = validTargets
                 .OrderBy(p => p.Position.DistanceTo(psycaster.Position))
                 .FirstOrDefault();
 
-            if (closestMelee != null)
+            if (nearest != null)
             {
-                if (TryCastPsyAbilityControlled(psycaster, "Stun", closestMelee, 18f, true, targetCell: false))
-                    return true;
-
-                IntVec3? safePulseCell = FindSafePulseCell(psycaster, new List<Pawn> { closestMelee }, 18f, 7f, minTargets: 1);
-
-                if (safePulseCell.HasValue)
+                if (TryCastPsyAbilityControlled(psycaster, "Stun", nearest, 18f, true, targetCell: false))
                 {
-                    if (TryCastPsyAbilityAtCell(psycaster, "BlindingPulse", safePulseCell.Value))
-                        return true;
-
-                    if (TryCastPsyAbilityAtCell(psycaster, "VertigoPulse", safePulseCell.Value))
-                        return true;
+                    TryForceAttackPawn(psycaster, nearest);
+                    data.psycasterNextCastTick = currentTick + Rand.RangeInclusive(180, 300);
+                    return true;
                 }
-            }
-
-            // 6. Если один дальник — подтягиваем к себе.
-            Pawn singleRanged = rangedTargets
-                .OrderBy(p => p.Position.DistanceTo(psycaster.Position))
-                .FirstOrDefault();
-
-            if (singleRanged != null)
-            {
-                if (TrySkipEnemyToPsycaster(psycaster, singleRanged, map))
-                    return true;
-
-                if (TryCastPsyAbilityControlled(psycaster, "Beckon", singleRanged, 18f, true, targetCell: false))
-                    return true;
-
-                if (TryCastPsyAbilityControlled(psycaster, "Stun", singleRanged, 18f, true, targetCell: false))
-                    return true;
             }
 
             return false;
+        }
+
+        private bool TryCastSafePulseOnTarget(Pawn caster, string abilityDefName, Pawn target, float maxRange, float safeDistanceFromCaster)
+        {
+            if (caster == null || target == null)
+                return false;
+
+            if (!IsValidPsycastTarget(caster, target, maxRange, requireLineOfSight: true))
+                return false;
+
+            if (caster.Position.DistanceTo(target.Position) <= safeDistanceFromCaster)
+                return false;
+
+            return TryCastPsyAbility(caster, abilityDefName, target, targetCell: true);
+        }
+
+        private bool ShouldApplyPsycasterCastPause(Pawn psycaster)
+        {
+            if (psycaster == null || psycaster.CurJob == null || psycaster.CurJob.def == null)
+                return true;
+
+            if (psycaster.CurJob.def == JobDefOf.AttackMelee)
+                return false;
+
+            if (psycaster.CurJob.def == JobDefOf.AttackStatic)
+                return false;
+
+            if (psycaster.CurJob.def == JobDefOf.Goto)
+                return false;
+
+            return true;
         }
 
         private bool TryPsycasterEmergencyDefense(VIPSiteData data, Pawn psycaster, Map map, List<Pawn> targets)
@@ -1197,17 +1737,19 @@ namespace SignalInterceptor
             if (psycaster == null || psycaster.jobs == null || psycaster.Dead || psycaster.Downed)
                 return;
 
+            if (!ShouldApplyPsycasterCastPause(psycaster))
+                return;
+
             try
             {
                 Job job = JobMaker.MakeJob(JobDefOf.Wait_Combat);
-                job.expiryInterval = Rand.RangeInclusive(60, 120);
+                job.expiryInterval = Rand.RangeInclusive(20, 40);
                 job.checkOverrideOnExpire = true;
 
                 psycaster.jobs.TryTakeOrderedJob(job, JobTag.Misc);
             }
             catch
             {
-                // Не критично. Если пауза не сработала, AI продолжит обычное поведение.
             }
         }
 
@@ -1250,6 +1792,120 @@ namespace SignalInterceptor
             {
                 return true;
             }
+        }
+
+        private void TryAttackPlayerShuttleOrBuilding(Pawn attacker, Map map)
+        {
+            if (attacker == null || map == null || attacker.Dead || attacker.Downed || attacker.jobs == null)
+                return;
+
+            Thing target = map.listerThings.AllThings
+                .Where(t => t != null)
+                .Where(t => t.Spawned && t.Map == map)
+                .Where(t => t.Faction == Faction.OfPlayer)
+                .Where(t => t.def != null && t.def.defName != null)
+                .Where(t =>
+                    t.def.defName.IndexOf("Shuttle", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    t.def.defName.IndexOf("Ship", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    t.def.defName.IndexOf("Transport", StringComparison.OrdinalIgnoreCase) >= 0)
+                .OrderBy(t => t.Position.DistanceTo(attacker.Position))
+                .FirstOrDefault();
+
+            if (target == null)
+                return;
+
+            TryForceAttackThing(attacker, target);
+        }
+
+        private void TryForceAttackThing(Pawn attacker, Thing target)
+        {
+            if (attacker == null || target == null)
+                return;
+
+            if (attacker.Dead || attacker.Downed || attacker.jobs == null)
+                return;
+
+            if (!attacker.Spawned || !target.Spawned || attacker.Map != target.Map)
+                return;
+
+            try
+            {
+                Verb attackVerb = attacker.TryGetAttackVerb(target, allowManualCastWeapons: true);
+
+                if (!CanUseAttackThingFromCurrentPosition(attacker, target, attackVerb))
+                {
+                    TryMoveTowardsThing(attacker, target);
+                    return;
+                }
+
+                JobDef attackJobDef = attackVerb != null && attackVerb.IsMeleeAttack
+                    ? JobDefOf.AttackMelee
+                    : JobDefOf.AttackStatic;
+
+                Job job = JobMaker.MakeJob(attackJobDef, target);
+                job.expiryInterval = Rand.RangeInclusive(240, 420);
+                job.checkOverrideOnExpire = true;
+
+                attacker.jobs.TryTakeOrderedJob(job, JobTag.Misc);
+            }
+            catch
+            {
+            }
+        }
+
+        private bool CanUseAttackThingFromCurrentPosition(Pawn attacker, Thing target, Verb verb)
+        {
+            if (attacker == null || target == null || attacker.Map == null)
+                return false;
+
+            float distance = attacker.Position.DistanceTo(target.Position);
+
+            if (verb == null)
+                return distance <= 1.9f;
+
+            if (verb.IsMeleeAttack)
+                return attacker.Position.AdjacentTo8WayOrInside(target.Position);
+
+            float range = verb.verbProps?.range ?? 1.9f;
+
+            if (distance > range * 0.95f)
+                return false;
+
+            if (!GenSight.LineOfSight(attacker.Position, target.Position, attacker.Map))
+                return false;
+
+            return true;
+        }
+
+        private void TryMoveTowardsThing(Pawn pawn, Thing target)
+        {
+            if (pawn == null || target == null || pawn.Map == null || pawn.jobs == null)
+                return;
+
+            Map map = pawn.Map;
+
+            IntVec3 moveCell;
+
+            bool found = CellFinder.TryFindRandomCellNear(
+                target.Position,
+                map,
+                3,
+                c => c.Standable(map)
+                     && c.GetFirstPawn(map) == null
+                     && pawn.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
+                out moveCell);
+
+            if (!found)
+                moveCell = target.Position;
+
+            if (!moveCell.IsValid || !moveCell.InBounds(map) || !moveCell.Standable(map))
+                return;
+
+            Job job = JobMaker.MakeJob(JobDefOf.Goto, moveCell);
+            job.expiryInterval = Rand.RangeInclusive(180, 300);
+            job.checkOverrideOnExpire = true;
+
+            pawn.jobs.TryTakeOrderedJob(job, JobTag.Misc);
         }
 
         private object GetPawnAbility(Pawn pawn, AbilityDef abilityDef)
