@@ -474,13 +474,13 @@ namespace SignalInterceptor
             List<Pawn> targets = GetValidPsycasterCombatTargets(psycaster, map);
             if (targets.NullOrEmpty())
             {
-                TryAttackPlayerShuttleOrBuilding(psycaster);
+                TryAttackPlayerShuttleOrBuilding(psycaster, map);
                 return;
             }
 
             Pawn nearest = GetNearestPsycasterTarget(psycaster, targets);
 
-            // 1. Если уже есть melee-commit после Stun/Invisibility — не даём AI гулять.
+            // Если уже есть melee-commit после Stun/Invisibility — не даём AI гулять.
             if (TryContinuePsycasterMeleeCommit(data, psycaster, targets))
             {
                 return;
@@ -488,60 +488,46 @@ namespace SignalInterceptor
 
             bool invisible = IsPsycasterInvisibleOrRecentlyInvisible(data, psycaster);
 
-            // 2. Если пси-кастер невидим — он не должен ходить вокруг цели.
-            // Он обязан сразу пытаться Stun -> melee.
+            // Если пси-кастер невидим — он не должен ходить вокруг цели.
+            // Он должен пытаться Stun -> melee.
             if (invisible && nearest != null)
             {
                 ForcePsycasterMeleeCommit(data, psycaster, nearest, 900);
 
-                if (TryPsycasterStunThenMelee(data, psycaster, nearest))
-                {
-                    return;
-                }
-
-                TryForcePsycasterMeleeAttack(psycaster, nearest);
+                TryPsycasterStunThenMelee(data, psycaster, nearest);
                 return;
             }
 
-            // 3. Если враг уже в зоне ближнего боя или уже оглушён — сразу добиваем.
+            // Если враг уже рядом или оглушён — сразу добиваем.
             Pawn closeOrStunnedTarget = FindCloseOrStunnedPsycasterTarget(psycaster, targets);
             if (closeOrStunnedTarget != null)
             {
-                if (TryPsycasterStunThenMelee(data, psycaster, closeOrStunnedTarget))
-                {
-                    return;
-                }
-
-                ForcePsycasterMeleeCommit(data, psycaster, closeOrStunnedTarget, 600);
-                TryForcePsycasterMeleeAttack(psycaster, closeOrStunnedTarget);
+                TryPsycasterStunThenMelee(data, psycaster, closeOrStunnedTarget);
                 return;
             }
 
-            // 4. Обычная логика кастов.
+            // Обычная логика кастов.
             if (tick >= data.psycasterNextCastTick)
             {
-                if (!data.psycasterFocusUsed && TryCastSelfPsyAbility(data, psycaster, "Focus"))
+                if (!data.psycasterFocusUsed && TryCastSelfPsyAbility(psycaster, "Focus"))
                 {
                     data.psycasterFocusUsed = true;
                     data.psycasterNextCastTick = tick + Rand.RangeInclusive(240, 360);
                     return;
                 }
 
-                if (TryPsycasterEmergencyDefense(data, psycaster, targets))
+                if (TryPsycasterEmergencyDefense(data, psycaster, map, targets))
                 {
                     return;
                 }
 
-                Pawn nearest = GetNearestPsycasterTarget(psycaster, targets);
-
-                if (nearest != null && TryCastInvisibilityAndCommit(data, psycaster, nearest))
+                if (TryPsycasterCastBestAbility(data, psycaster, map, targets))
                 {
-                    return true;
+                    return;
                 }
             }
 
-            // 5. Если ничего не кастует — не стоим, не ждём, не Wander.
-            // Идём к выбранной цели.
+            // Если ничего не кастует — не стоим и не Wander.
             if (nearest != null)
             {
                 InterruptBadPsycasterCombatJob(psycaster, nearest);
@@ -566,9 +552,14 @@ namespace SignalInterceptor
                 return false;
             }
 
+            if (psycaster.Map == null || psycaster.Map != target.Map)
+            {
+                return false;
+            }
+
             int tick = Find.TickManager.TicksGame;
 
-            bool casted = TryCastSelfPsyAbility(data, psycaster, "Invisibility");
+            bool casted = TryCastSelfPsyAbility(psycaster, "Invisibility");
             if (!casted)
             {
                 return false;
@@ -579,8 +570,6 @@ namespace SignalInterceptor
 
             ForcePsycasterMeleeCommit(data, psycaster, target, 900);
 
-            // После невидимости сразу пытаемся дать Stun.
-            // Если Stun недоступен — всё равно идём в melee.
             TryPsycasterStunThenMelee(data, psycaster, target);
 
             return true;
@@ -787,7 +776,7 @@ namespace SignalInterceptor
                 return false;
             }
 
-            if (psycaster.Map != target.Map)
+            if (psycaster.Map == null || psycaster.Map != target.Map)
             {
                 return false;
             }
@@ -800,19 +789,29 @@ namespace SignalInterceptor
 
             if (!targetAlreadyStunned && tick >= data.psycasterNextCastTick)
             {
-                bool casted = TryCastPsyAbilityControlled(data, psycaster, "Stun", target);
+                bool casted = TryCastPsyAbilityControlled(
+                    psycaster,
+                    "Stun",
+                    target,
+                    18f,
+                    true,
+                    false
+                );
 
                 if (casted)
                 {
                     data.psycasterNextCastTick = tick + Rand.RangeInclusive(90, 150);
+
                     InterruptBadPsycasterCombatJob(psycaster, target);
                     TryForcePsycasterMeleeAttack(psycaster, target);
+
                     return true;
                 }
             }
 
             InterruptBadPsycasterCombatJob(psycaster, target);
             TryForcePsycasterMeleeAttack(psycaster, target);
+
             return true;
         }
 
@@ -1199,12 +1198,16 @@ namespace SignalInterceptor
         private bool TryPsycasterEmergencyDefense(VIPSiteData data, Pawn psycaster, Map map, List<Pawn> targets)
         {
             if (data == null || psycaster == null || map == null || targets.NullOrEmpty())
+            {
                 return false;
+            }
 
             int currentTick = Find.TickManager.TicksGame;
 
             if (currentTick < data.psycasterNextDefensiveCastTick)
+            {
                 return false;
+            }
 
             List<Pawn> closeEnemies = targets
                 .Where(p => p != null)
@@ -1214,11 +1217,17 @@ namespace SignalInterceptor
                 .ToList();
 
             if (closeEnemies.Count < 2)
+            {
                 return false;
+            }
 
             RefillPsycasterPsyfocus(psycaster);
 
-            if (TryCastSelfPsyAbility(psycaster, "Invisibility"))
+            Pawn nearest = closeEnemies
+                .OrderBy(p => p.Position.DistanceTo(psycaster.Position))
+                .FirstOrDefault();
+
+            if (nearest != null && TryCastInvisibilityAndCommit(data, psycaster, nearest))
             {
                 data.psycasterNextDefensiveCastTick = currentTick + Rand.RangeInclusive(480, 720);
                 return true;
@@ -1236,13 +1245,14 @@ namespace SignalInterceptor
                 return true;
             }
 
-            Pawn nearest = closeEnemies
-                .OrderBy(p => p.Position.DistanceTo(psycaster.Position))
-                .FirstOrDefault();
-
-            if (nearest != null && TryCastPsyAbilityControlled(psycaster, "Stun", nearest, 18f, true, targetCell: false))
+            if (nearest != null &&
+                TryCastPsyAbilityControlled(psycaster, "Stun", nearest, 18f, true, false))
             {
                 data.psycasterNextDefensiveCastTick = currentTick + Rand.RangeInclusive(300, 480);
+
+                ForcePsycasterMeleeCommit(data, psycaster, nearest, 720);
+                TryForcePsycasterMeleeAttack(psycaster, nearest);
+
                 return true;
             }
 

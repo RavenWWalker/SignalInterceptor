@@ -449,7 +449,7 @@ namespace SignalInterceptor
 
             if (psycaster.Spawned && psycaster.Map != null && psycaster.Map == data.site?.Map)
             {
-                TickPsycasterCombatAI(data, psycaster, psycaster.Map);
+                TickPsycasterCombatAI(data, psycaster);
             }
         }
 
