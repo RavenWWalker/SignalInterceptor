@@ -116,20 +116,11 @@ namespace SignalInterceptor
 
         private void TryApplyInitialPsycasterBuffs(VIPSiteData data, Pawn psycaster)
         {
-            if (data == null || psycaster == null)
-                return;
-
-            if (data.psycasterFocusUsed)
-                return;
-
-            if (TryCastSelfPsyAbility(psycaster, "Focus"))
-            {
-                data.psycasterFocusUsed = true;
-                Log.Message("[Signal Interceptor] Psycaster VIP applied initial Focus.");
-                return;
-            }
-
-            data.psycasterFocusUsed = true;
+            // Старая логика «применить Focus один раз при спавне» теперь живёт в PsycasterBrain
+            // (он сам кастует Focus в Opening стансе). Здесь оставляем no-op для совместимости
+            // с местами, которые могут вызывать этот метод (например, SpawnPsycasterVIP).
+            //
+            // Сам спавн Focus сделает Brain в первом тике после grace-периода.
         }
 
         private void PreparePsycasterVIPPawn(Pawn pawn, int tier, int psylinkLevel)
@@ -457,51 +448,20 @@ namespace SignalInterceptor
         private void TickPsycasterCombatAI(VIPSiteData data, Pawn psycaster)
         {
             if (data == null || psycaster == null)
-            {
                 return;
-            }
 
-            if (psycaster.Destroyed || psycaster.Dead || psycaster.Downed || !psycaster.Spawned || psycaster.Map == null)
-            {
+            if (psycaster.Destroyed || psycaster.Dead || psycaster.Downed
+                || !psycaster.Spawned || psycaster.Map == null)
                 return;
-            }
 
-            Map map = psycaster.Map;
-            int tick = Find.TickManager.TicksGame;
-
-            ForcePsycasterNoFlee(psycaster, map);
-
-            List<Pawn> targets = GetValidPsycasterCombatTargets(psycaster, map);
-            if (targets.NullOrEmpty())
+            // Ленивая инициализация мозга. Создаётся при первом тике
+            // (включая первый тик после загрузки сейва).
+            if (data.psycasterBrain == null)
             {
-                TryAttackPlayerShuttleOrBuilding(psycaster, map);
-                return;
+                data.psycasterBrain = new SignalInterceptor.AI.Psycaster.PsycasterBrain(this, psycaster);
             }
 
-            // Комбо имеет самый высокий приоритет.
-            if (TryContinuePsycasterCombo(data, psycaster, map, targets))
-            {
-                return;
-            }
-
-            // Режим выбирается не каждый тик, а раз в короткий интервал.
-            if (tick >= data.psycasterNextThinkTick || data.psycasterModeUntilTick <= tick || data.psycasterMode <= 0)
-            {
-                ChoosePsycasterCombatMode(data, psycaster, map, targets);
-                data.psycasterNextThinkTick = tick + Rand.RangeInclusive(45, 75);
-            }
-
-            if (TryRunPsycasterCombatMode(data, psycaster, map, targets))
-            {
-                return;
-            }
-
-            Pawn nearest = GetNearestPsycasterTarget(psycaster, targets);
-            if (nearest != null)
-            {
-                InterruptBadPsycasterCombatJob(psycaster, nearest);
-                TryForcePsycasterMeleeAttack(psycaster, nearest);
-            }
+            data.psycasterBrain.Tick();
         }
 
         private void ChoosePsycasterCombatMode(VIPSiteData data, Pawn psycaster, Map map, List<Pawn> targets)
@@ -2971,6 +2931,89 @@ namespace SignalInterceptor
                 return;
 
             TryForceAttackPawn(attacker, target);
+        }
+
+        // ============================================================
+        // Публичные обёртки для PsycasterBrain.
+        // PsycasterBrain живёт в отдельном namespace и не имеет доступа
+        // к private-методам этого partial-класса. Поэтому обёртки.
+        // ============================================================
+
+        public bool TryFindWallraiseCell_Public(Pawn caster, Pawn target, Map map, out IntVec3 cell)
+        {
+            return TryFindWallraiseCell(caster, target, map, out cell);
+        }
+
+        public bool TryCastSelfPsyAbility_Public(Pawn caster, string abilityDefName)
+        {
+            return TryCastSelfPsyAbility(caster, abilityDefName);
+        }
+
+        public bool TryCastPsyAbilityControlled_Public(
+            Pawn caster, string abilityDefName, Pawn target,
+            float maxRange, bool requireLos, bool targetCell)
+        {
+            return TryCastPsyAbilityControlled(caster, abilityDefName, target, maxRange, requireLos, targetCell);
+        }
+
+        public bool TryCastPsyAbilityAtCellControlled_Public(
+            Pawn caster, string abilityDefName, IntVec3 cell,
+            float maxRange, bool requireLos)
+        {
+            return TryCastPsyAbilityAtCellControlled(caster, abilityDefName, cell, maxRange, requireLos);
+        }
+
+        public bool TryCastPsyAbilityToDestination_Public(
+            Pawn caster, string abilityDefName, Pawn target, IntVec3 destination)
+        {
+            AbilityDef def = FindAbilityDefByPossibleName(abilityDefName);
+            if (def == null) return false;
+            return TryCastPsyAbilityToDestination(caster, def, target, destination);
+        }
+
+        public AbilityDef FindAbilityDefByPossibleName_Public(string name)
+        {
+            return FindAbilityDefByPossibleName(name);
+        }
+
+        public object GetPawnAbility_Public(Pawn pawn, AbilityDef def)
+        {
+            return GetPawnAbility(pawn, def);
+        }
+
+        public bool IsAbilityOnCooldown_Public(object ability)
+        {
+            return IsAbilityOnCooldown(ability);
+        }
+
+        public bool IsRangedCombatPawn_Public(Pawn p)
+        {
+            return IsRangedCombatPawn(p);
+        }
+
+        public void ForcePsycasterNoFlee_Public(Pawn pawn, Map map)
+        {
+            ForcePsycasterNoFlee(pawn, map);
+        }
+
+        public void TryAttackPlayerShuttleOrBuilding_Public(Pawn attacker, Map map)
+        {
+            TryAttackPlayerShuttleOrBuilding(attacker, map);
+        }
+
+        public void TryForcePsycasterAttackNearestPlayerPawn_Public(Pawn attacker, Map map)
+        {
+            TryForcePsycasterAttackNearestPlayerPawn(attacker, map);
+        }
+
+        public bool TryForcePsycasterMeleeAttack_Public(Pawn psycaster, Pawn target)
+        {
+            return TryForcePsycasterMeleeAttack(psycaster, target);
+        }
+
+        public void InterruptBadPsycasterCombatJob_Public(Pawn psycaster, Pawn intendedTarget)
+        {
+            InterruptBadPsycasterCombatJob(psycaster, intendedTarget);
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using RimWorld;
 using RimWorld.Planet;
+using SignalInterceptor.AI.Psycaster;
 using Verse;
 
 namespace SignalInterceptor
@@ -37,30 +38,45 @@ namespace SignalInterceptor
 
         public IntVec3 signalCampCenter = IntVec3.Invalid;
 
-        // Psycaster VIP
+        // Psycaster VIP — состояние квеста (НЕ AI). Сохраняется в сейв.
         public Pawn psycasterPawn;
         public bool psycasterDelivered;
         public bool psycasterDestabilized;
         public bool psycasterWasShocked;
-        public int psycasterNextCastTick = -1;
-        public bool psycasterFocusUsed;
-        public int psycasterNextDefensiveCastTick = -1;
-        public int psycasterNextWallraiseTick = -1;
-        public int psycasterNextSmokepopTick = -1;
-        public int psycasterMeleeCommitTargetThingId = -1;
-        public int psycasterMeleeCommitUntilTick = -1;
-        public int psycasterLastInvisibilityTick = -999999;
-        public int psycasterComboTargetThingId = -1;
-        public int psycasterComboStage = 0;
-        public int psycasterComboExpireTick = -1;
-        public int psycasterMode = 0;
-        public int psycasterModeUntilTick = -1;
-        public int psycasterModeTargetThingId = -1;
-        public int psycasterNextThinkTick = -1;
 
-        public int psycasterLastBlindingPulseTick = -999999;
-        public int psycasterLastVertigoPulseTick = -999999;
-        public int psycasterLastBerserkPulseTick = -999999;
+        /// <summary>
+        /// Мозг пси-кастера. Не сериализуется — после загрузки сейва пересоздаётся
+        /// в SignalInterceptorGameComponent при первом вызове TickPsycasterCombatAI.
+        /// </summary>
+        [Unsaved(false)]
+        public PsycasterBrain psycasterBrain;
+
+        // ============================================================
+        // ВРЕМЕННЫЕ ПОЛЯ для совместимости со старым AI-кодом.
+        // Старый код в VIP.Psycaster.cs (TryRunPsycasterRangedGroupMode и др.) ещё ссылается
+        // на эти поля. Мы их физически больше не используем — новый AI работает через PsycasterBrain.
+        // Все эти поля помечены [Unsaved] и будут полностью удалены вместе со старым кодом
+        // в финальной пачке cleanup.
+        // ============================================================
+
+        [Unsaved(false)] public int psycasterNextCastTick = -1;
+        [Unsaved(false)] public bool psycasterFocusUsed;
+        [Unsaved(false)] public int psycasterNextDefensiveCastTick = -1;
+        [Unsaved(false)] public int psycasterNextWallraiseTick = -1;
+        [Unsaved(false)] public int psycasterNextSmokepopTick = -1;
+        [Unsaved(false)] public int psycasterMeleeCommitTargetThingId = -1;
+        [Unsaved(false)] public int psycasterMeleeCommitUntilTick = -1;
+        [Unsaved(false)] public int psycasterLastInvisibilityTick = -999999;
+        [Unsaved(false)] public int psycasterComboTargetThingId = -1;
+        [Unsaved(false)] public int psycasterComboStage = 0;
+        [Unsaved(false)] public int psycasterComboExpireTick = -1;
+        [Unsaved(false)] public int psycasterMode = 0;
+        [Unsaved(false)] public int psycasterModeUntilTick = -1;
+        [Unsaved(false)] public int psycasterModeTargetThingId = -1;
+        [Unsaved(false)] public int psycasterNextThinkTick = -1;
+        [Unsaved(false)] public int psycasterLastBlindingPulseTick = -999999;
+        [Unsaved(false)] public int psycasterLastVertigoPulseTick = -999999;
+        [Unsaved(false)] public int psycasterLastBerserkPulseTick = -999999;
 
         public void ExposeData()
         {
@@ -78,26 +94,6 @@ namespace SignalInterceptor
             Scribe_Values.Look(ref psycasterDelivered, "psycasterDelivered", false);
             Scribe_Values.Look(ref psycasterDestabilized, "psycasterDestabilized", false);
             Scribe_Values.Look(ref psycasterWasShocked, "psycasterWasShocked", false);
-            Scribe_Values.Look(ref psycasterNextCastTick, "psycasterNextCastTick", -1);
-            Scribe_Values.Look(ref psycasterFocusUsed, "psycasterFocusUsed", false);
-            Scribe_Values.Look(ref psycasterNextDefensiveCastTick, "psycasterNextDefensiveCastTick", -1);
-            Scribe_Values.Look(ref psycasterNextWallraiseTick, "psycasterNextWallraiseTick", -1);
-            Scribe_Values.Look(ref psycasterNextSmokepopTick, "psycasterNextSmokepopTick", -1);
-            Scribe_Values.Look(ref psycasterMeleeCommitTargetThingId, "psycasterMeleeCommitTargetThingId", -1);
-            Scribe_Values.Look(ref psycasterMeleeCommitUntilTick, "psycasterMeleeCommitUntilTick", -1);
-            Scribe_Values.Look(ref psycasterLastInvisibilityTick, "psycasterLastInvisibilityTick", -999999);
-            Scribe_Values.Look(ref psycasterComboTargetThingId, "psycasterComboTargetThingId", -1);
-            Scribe_Values.Look(ref psycasterComboStage, "psycasterComboStage", 0);
-            Scribe_Values.Look(ref psycasterComboExpireTick, "psycasterComboExpireTick", -1);
-
-            Scribe_Values.Look(ref psycasterMode, "psycasterMode", 0);
-            Scribe_Values.Look(ref psycasterModeUntilTick, "psycasterModeUntilTick", -1);
-            Scribe_Values.Look(ref psycasterModeTargetThingId, "psycasterModeTargetThingId", -1);
-            Scribe_Values.Look(ref psycasterNextThinkTick, "psycasterNextThinkTick", -1);
-
-            Scribe_Values.Look(ref psycasterLastBlindingPulseTick, "psycasterLastBlindingPulseTick", -999999);
-            Scribe_Values.Look(ref psycasterLastVertigoPulseTick, "psycasterLastVertigoPulseTick", -999999);
-            Scribe_Values.Look(ref psycasterLastBerserkPulseTick, "psycasterLastBerserkPulseTick", -999999);
         }
     }
 

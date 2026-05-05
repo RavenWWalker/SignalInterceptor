@@ -56,6 +56,27 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AI\Psycaster\AbilityScorerBase.cs" />
+    <Compile Include="AI\Psycaster\BattlefieldSnapshot.cs" />
+    <Compile Include="AI\Psycaster\EnemyAssessment.cs" />
+    <Compile Include="AI\Psycaster\EnemyRole.cs" />
+    <Compile Include="AI\Psycaster\IAbilityScorer.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.cs" />
+    <Compile Include="AI\Psycaster\PsycasterStance.cs" />
+    <Compile Include="AI\Psycaster\PsycasterTuning.cs" />
+    <Compile Include="AI\Psycaster\ReactiveTriggers.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_Beckon.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_BerserkPulse.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_BlindingPulse.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_ChaosSkip.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_MassChaosSkip.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_Skip.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_Skipshield.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_Stun.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_VertigoPulse.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_Wallraise.cs" />
+    <Compile Include="AI\Psycaster\SnapshotBuilder.cs" />
+    <Compile Include="AI\Psycaster\StanceSelector.cs" />
     <Compile Include="Comps\CompProperties_SignalInterceptor.cs" />
     <Compile Include="Comps\CompSignalInterceptor.cs" />
     <Compile Include="Core\HarmonyPatches.cs" />

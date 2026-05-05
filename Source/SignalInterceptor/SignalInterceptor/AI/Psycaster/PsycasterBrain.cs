@@ -1,0 +1,493 @@
+﻿using RimWorld;
+using System.Collections.Generic;
+using UnityEngine;
+using Verse;
+using Verse.AI;
+
+namespace SignalInterceptor.AI.Psycaster
+{
+    /// <summary>
+    /// Главный «мозг» пси-кастера. Один экземпляр на пси-кастер-VIP.
+    /// Не сериализуется — пересоздаётся при загрузке сейва, с компенсацией PostLoadGraceTicks.
+    ///
+    /// Жизненный цикл:
+    /// - VIP.Psycaster.cs создаёт Brain в SpawnPsycasterVIP (или ленивая инициализация).
+    /// - Каждый игровой тик вызывается Brain.Tick().
+    /// - Brain сам решает, нужно ли пересчитать стансу / выбрать действие, или подождать.
+    ///
+    /// Архитектура трёх временных горизонтов:
+    /// - StanceReevalMin/Max тиков — переоценка стансы.
+    /// - ActionSelectMin/Max тиков — выбор действия (если пешка свободна).
+    /// - ReactiveTriggers — мгновенное прерывание по триггеру.
+    /// </summary>
+    public class PsycasterBrain
+    {
+        // ============================================================
+        // Контекст
+        // ============================================================
+
+        private readonly SignalInterceptorGameComponent gc;
+        private readonly Pawn caster;
+
+        public Pawn Caster { get { return caster; } }
+        public SignalInterceptorGameComponent GameComp { get { return gc; } }
+
+        // ============================================================
+        // Состояние
+        // ============================================================
+
+        private PsycasterStance currentStance = PsycasterStance.Opening;
+        public PsycasterStance CurrentStance { get { return currentStance; } }
+
+        private int nextStanceReevalTick = -1;
+        private int nextActionSelectTick = -1;
+        private int graceUntilTick = -1;
+        private bool focusBuffApplied = false;
+
+        private readonly ReactiveTriggers triggers = new ReactiveTriggers();
+        private readonly Dictionary<string, int> softCooldowns = new Dictionary<string, int>();
+
+        private readonly List<IAbilityScorer> scorers = new List<IAbilityScorer>();
+
+        /// <summary>
+        /// Последняя выбранная и применённая action — для debug overlay.
+        /// </summary>
+        public ScoredAction LastChosenAction { get; private set; }
+
+        /// <summary>
+        /// Снапшот, использованный при последнем action-select — для debug overlay.
+        /// </summary>
+        public BattlefieldSnapshot LastSnapshot { get; private set; }
+
+        // ============================================================
+        // Конструктор и регистрация скорерров
+        // ============================================================
+
+        public PsycasterBrain(SignalInterceptorGameComponent gc, Pawn caster)
+        {
+            this.gc = gc;
+            this.caster = caster;
+
+            int now = Find.TickManager.TicksGame;
+            graceUntilTick = now + PsycasterTuning.PostLoadGraceTicks;
+            nextStanceReevalTick = now + PsycasterTuning.PostLoadGraceTicks;
+            nextActionSelectTick = now + PsycasterTuning.PostLoadGraceTicks;
+
+            triggers.Reset();
+
+            // Регистрация скорерров. Сейчас пусто — добавим в Пачках 4-6.
+            RegisterScorers();
+        }
+
+        private void RegisterScorers()
+        {
+            // Пачка 4: контроль
+            scorers.Add(new Scorer_Stun());
+            scorers.Add(new Scorer_BerserkPulse());
+            scorers.Add(new Scorer_BlindingPulse());
+            scorers.Add(new Scorer_VertigoPulse());
+
+            // Пачка 5: мобильность
+            scorers.Add(new Scorer_Skip());
+            scorers.Add(new Scorer_ChaosSkip());
+            scorers.Add(new Scorer_MassChaosSkip());
+            scorers.Add(new Scorer_Wallraise());
+            scorers.Add(new Scorer_Beckon());
+            // scorers.Add(new Scorer_Smokepop());
+            scorers.Add(new Scorer_Skipshield());
+
+            // Пачка 6: ситуативные
+            // scorers.Add(new Scorer_Berserk());
+            // scorers.Add(new Scorer_ManhunterPulse());
+            // scorers.Add(new Scorer_Invisibility());
+            // scorers.Add(new Scorer_Beckon());
+            // scorers.Add(new Scorer_Focus());
+        }
+
+        // ============================================================
+        // Главный тик
+        // ============================================================
+
+        public void Tick()
+        {
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return;
+            if (caster.Map == null)
+                return;
+
+            int now = Find.TickManager.TicksGame;
+
+            // Не даём убегать с карты — оставляем старую логику.
+            gc.ForcePsycasterNoFlee_Public(caster, caster.Map);
+
+            // Превентивный Focus один раз на старте боя — пока скорерры не подключены, делаем тут.
+            if (!focusBuffApplied && now >= graceUntilTick)
+            {
+                if (gc.TryCastSelfPsyAbility_Public(caster, "Focus"))
+                {
+                    focusBuffApplied = true;
+                    nextActionSelectTick = now + PsycasterTuning.CastWarmupShort + 30;
+                    return;
+                }
+                focusBuffApplied = true; // больше не пытаемся
+            }
+
+            // Период «приходит в себя» после спавна / лоада.
+            if (now < graceUntilTick)
+                return;
+
+            // Собираем снапшот.
+            BattlefieldSnapshot snap = SnapshotBuilder.Build(this);
+            LastSnapshot = snap;
+
+            if (!snap.HasEnemies)
+            {
+                // Врагов нет — попробуем сломать игроку шаттл/корабль (как старый AI делал).
+                gc.TryAttackPlayerShuttleOrBuilding_Public(caster, caster.Map);
+                return;
+            }
+
+            // Реактивные триггеры — могут заставить переоценить ВСЁ прямо сейчас.
+            bool interrupt = triggers.ShouldInterrupt(snap);
+            if (interrupt)
+            {
+                nextStanceReevalTick = now;
+                nextActionSelectTick = now;
+            }
+
+            // Стратегический горизонт: переоценка стансы.
+            if (now >= nextStanceReevalTick)
+            {
+                PsycasterStance newStance = StanceSelector.Select(snap, currentStance);
+                if (newStance != currentStance)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster stance changed: "
+                                + currentStance + " -> " + newStance
+                                + " | HP=" + snap.casterHpFraction.ToString("F2")
+                                + " | enemies=" + snap.enemies.Count
+                                + " | cluster=" + snap.largestClusterSize);
+                }
+                currentStance = newStance;
+                nextStanceReevalTick = now + Rand.RangeInclusive(
+                    PsycasterTuning.StanceReevalMinTicks,
+                    PsycasterTuning.StanceReevalMaxTicks);
+            }
+
+            // Тактический горизонт: выбор действия.
+            if (now >= nextActionSelectTick && IsCasterFreeToAct())
+            {
+                ActionSelectAndExecute(snap);
+                nextActionSelectTick = now + Rand.RangeInclusive(
+                    PsycasterTuning.ActionSelectMinTicks,
+                    PsycasterTuning.ActionSelectMaxTicks);
+            }
+        }
+
+        /// <summary>
+        /// Свободна ли пешка для нового решения. Не дёргаем её, если сейчас кастует/атакует.
+        /// </summary>
+        private bool IsCasterFreeToAct()
+        {
+            if (caster.stances == null)
+                return true;
+
+            if (caster.stances.stunner != null && caster.stances.stunner.Stunned)
+                return false;
+
+            // Если каст в процессе — текущая stance это PawnStance_Warmup.
+            // Используем имя типа через рефлексию, чтобы не зависеть от namespace
+            // (в разных версиях RimWorld класс лежит то в Verse, то в Verse.AI).
+            Stance curStance = caster.stances.curStance;
+            if (curStance != null)
+            {
+                string typeName = curStance.GetType().Name;
+                if (typeName == "PawnStance_Warmup")
+                    return false;
+            }
+
+            return true;
+        }
+
+        // ============================================================
+        // Выбор действия (action-select)
+        // ============================================================
+
+        private void ActionSelectAndExecute(BattlefieldSnapshot snap)
+        {
+            // Пробежаться по скорерам, выбрать максимум.
+            ScoredAction best = ScoredAction.None;
+
+            for (int i = 0; i < scorers.Count; i++)
+            {
+                IAbilityScorer scorer = scorers[i];
+                if (scorer == null) continue;
+
+                if (!scorer.IsAvailable(this, snap))
+                    continue;
+
+                ScoredAction candidate = scorer.Score(this, snap);
+                if (candidate == null || !candidate.IsValid) continue;
+
+                if (candidate.score > best.score)
+                    best = candidate;
+            }
+
+            if (best.IsValid)
+            {
+                ExecuteAction(best, snap);
+                LastChosenAction = best;
+                return;
+            }
+
+            // FALLBACK на время Пачки 3: скорерров ещё нет, поэтому просто
+            // дёрнем самый банальный путь — атаковать ближайшего цели в melee.
+            // Когда подключим Пачки 4-6 — этот fallback станет почти недостижимым.
+            FallbackBasicAttack(snap);
+        }
+
+        private void ExecuteAction(ScoredAction action, BattlefieldSnapshot snap)
+        {
+            if (action == null || !action.IsValid) return;
+
+            bool casted = false;
+
+            switch (action.targetType)
+            {
+                case ScoredActionTargetType.Self:
+                    casted = gc.TryCastSelfPsyAbility_Public(caster, action.abilityDefName);
+                    break;
+
+                case ScoredActionTargetType.Pawn:
+                    if (action.targetPawn != null)
+                        casted = gc.TryCastPsyAbilityControlled_Public(
+                            caster, action.abilityDefName, action.targetPawn,
+                            PsycasterTuning.StandardPulseRange, true, false);
+                    break;
+
+                case ScoredActionTargetType.Cell:
+                    if (action.targetCell.IsValid)
+                        casted = gc.TryCastPsyAbilityAtCellControlled_Public(
+                            caster, action.abilityDefName, action.targetCell,
+                            PsycasterTuning.StandardPulseRange, true);
+                    break;
+
+                case ScoredActionTargetType.PawnToDestination:
+                    if (action.targetPawn != null && action.destinationCell.IsValid)
+                        casted = gc.TryCastPsyAbilityToDestination_Public(
+                            caster, action.abilityDefName, action.targetPawn, action.destinationCell);
+                    break;
+            }
+
+            if (casted)
+            {
+                // Поставить soft-cooldown по этой способности.
+                ApplySoftCooldown(action.abilityDefName);
+
+                // Не дёргать пешку до окончания warmup + небольшой запас.
+                int warmup = action.castWarmupTicks > 0
+                    ? action.castWarmupTicks
+                    : PsycasterTuning.CastWarmupMedium;
+                nextActionSelectTick = Find.TickManager.TicksGame + warmup + 15;
+
+                Log.Message("[Signal Interceptor] Psycaster action: " + action.abilityDefName
+                            + " | score=" + action.score.ToString("F2")
+                            + " | stance=" + currentStance
+                            + " | reason=" + (action.debugReason ?? ""));
+            }
+        }
+
+        private void FallbackBasicAttack(BattlefieldSnapshot snap)
+        {
+            // Все скореры на soft-CD или не нашли цель.
+            // НЕ идём в melee fallback — это самоубийство против дальников.
+            // Вместо этого: позиционируемся в окно каста и ждём перезарядки.
+
+            EnemyAssessment top = snap.topThreat;
+            if (top == null || top.pawn == null)
+            {
+                // Реально никого нет в snap — оставим старый путь.
+                gc.TryForcePsycasterAttackNearestPlayerPawn_Public(caster, caster.Map);
+                return;
+            }
+
+            // Якорь — центр кластера, если он есть, иначе topThreat.
+            IntVec3 anchor = (snap.largestClusterSize > 0 && snap.largestClusterCenter.IsValid)
+                ? snap.largestClusterCenter
+                : top.pawn.Position;
+
+            float curDist = caster.Position.DistanceTo(anchor);
+            float ideal = PsycasterTuning.KiteIdealDistance;
+            float minD = PsycasterTuning.KiteMinDistance;
+
+            // Если стойка явно про melee (Hunt) и ближний враг рядом — атакуем.
+            if (currentStance == PsycasterStance.Hunt && top.distanceToCaster <= 1.6f)
+            {
+                gc.InterruptBadPsycasterCombatJob_Public(caster, top.pawn);
+                gc.TryForcePsycasterMeleeAttack_Public(caster, top.pawn);
+                return;
+            }
+
+            // Уже в окне [min, ideal+2] — стоим, ждём CD. НЕ убегаем!
+            if (curDist >= minD && curDist <= ideal + 2f)
+            {
+                gc.InterruptBadPsycasterCombatJob_Public(caster, top.pawn);
+                Log.Message("[Signal Interceptor] Psycaster idle-hold dist=" + curDist.ToString("F1")
+                            + " window=" + minD + "-" + ideal
+                            + " stance=" + currentStance);
+                return;
+            }
+
+            // Слишком далеко от якоря — подходим (но не вплотную).
+            if (curDist > ideal + 2f)
+            {
+                IntVec3 approachCell = ComputeApproachCell(caster.Position, anchor, ideal);
+                if (approachCell.IsValid && approachCell.InBounds(caster.Map) && approachCell.Standable(caster.Map))
+                {
+                    Job job = JobMaker.MakeJob(JobDefOf.Goto, approachCell);
+                    job.locomotionUrgency = LocomotionUrgency.Jog;
+                    caster.jobs.StartJob(job, JobCondition.InterruptForced);
+                    Log.Message("[Signal Interceptor] Psycaster idle-approach " + approachCell
+                                + " dist " + curDist.ToString("F1") + "->" + ideal.ToString("F0"));
+                }
+                return;
+            }
+
+            // Слишком близко — отступаем на пару клеток от якоря.
+            if (curDist < minD)
+            {
+                IntVec3 retreatCell = ComputeRetreatCell(caster.Position, anchor, 4);
+                if (retreatCell.IsValid && retreatCell.InBounds(caster.Map) && retreatCell.Standable(caster.Map))
+                {
+                    Job job = JobMaker.MakeJob(JobDefOf.Goto, retreatCell);
+                    job.locomotionUrgency = LocomotionUrgency.Sprint;
+                    caster.jobs.StartJob(job, JobCondition.InterruptForced);
+                    Log.Message("[Signal Interceptor] Psycaster idle-retreat " + retreatCell);
+                }
+            }
+        }
+
+        // Целочисленные хелперы — без UnityEngine.Vector3, чтобы не тянуть using.
+        private IntVec3 ComputeApproachCell(IntVec3 from, IntVec3 to, float idealDist)
+        {
+            int dx = to.x - from.x;
+            int dz = to.z - from.z;
+            float len = Mathf.Sqrt(dx * dx + dz * dz);
+            if (len <= 0.01f) return from;
+
+            float move = len - idealDist;
+            if (move <= 0f) return from;
+
+            float nx = dx / len;
+            float nz = dz / len;
+            int cx = from.x + Mathf.RoundToInt(nx * move);
+            int cz = from.z + Mathf.RoundToInt(nz * move);
+            return new IntVec3(cx, from.y, cz);
+        }
+
+        private IntVec3 ComputeRetreatCell(IntVec3 from, IntVec3 anchor, int steps)
+        {
+            int dx = from.x - anchor.x;
+            int dz = from.z - anchor.z;
+            float len = Mathf.Sqrt(dx * dx + dz * dz);
+            if (len <= 0.01f)
+            {
+                // Стоим прямо на якоре — отойдём на восток.
+                return new IntVec3(from.x + steps, from.y, from.z);
+            }
+            float nx = dx / len;
+            float nz = dz / len;
+            int cx = from.x + Mathf.RoundToInt(nx * steps);
+            int cz = from.z + Mathf.RoundToInt(nz * steps);
+            return new IntVec3(cx, from.y, cz);
+        }
+
+        // ============================================================
+        // Soft-cooldown
+        // ============================================================
+
+        public bool IsOnSoftCooldown(string abilityDefName)
+        {
+            if (string.IsNullOrEmpty(abilityDefName)) return false;
+            int until;
+            if (!softCooldowns.TryGetValue(abilityDefName, out until)) return false;
+            return Find.TickManager.TicksGame < until;
+        }
+
+        public void ApplySoftCooldown(string abilityDefName)
+        {
+            if (string.IsNullOrEmpty(abilityDefName)) return;
+
+            int min = 0;
+            int max = 0;
+            switch (abilityDefName)
+            {
+                case "BlindingPulse":
+                    min = PsycasterTuning.BlindingPulseSoftCooldownMin;
+                    max = PsycasterTuning.BlindingPulseSoftCooldownMax;
+                    break;
+                case "VertigoPulse":
+                    min = PsycasterTuning.VertigoPulseSoftCooldownMin;
+                    max = PsycasterTuning.VertigoPulseSoftCooldownMax;
+                    break;
+                case "BerserkPulse":
+                    min = PsycasterTuning.BerserkPulseSoftCooldownMin;
+                    max = PsycasterTuning.BerserkPulseSoftCooldownMax;
+                    break;
+                case "Invisibility":
+                    min = PsycasterTuning.InvisibilitySoftCooldownMin;
+                    max = PsycasterTuning.InvisibilitySoftCooldownMax;
+                    break;
+                case "Smokepop":
+                    min = PsycasterTuning.SmokepopSoftCooldownMin;
+                    max = PsycasterTuning.SmokepopSoftCooldownMax;
+                    break;
+                case "Wallraise":
+                    min = PsycasterTuning.WallraiseSoftCooldownMin;
+                    max = PsycasterTuning.WallraiseSoftCooldownMax;
+                    break;
+                case "Skipshield":
+                    min = PsycasterTuning.SkipshieldSoftCooldownMin;
+                    max = PsycasterTuning.SkipshieldSoftCooldownMax;
+                    break;
+                case "ManhunterPulse":
+                    min = PsycasterTuning.ManhunterPulseSoftCooldownMin;
+                    max = PsycasterTuning.ManhunterPulseSoftCooldownMax;
+                    break;
+                case "Focus":
+                    min = PsycasterTuning.FocusSoftCooldownMin;
+                    max = PsycasterTuning.FocusSoftCooldownMax;
+                    break;
+                default:
+                    return; // Способность без soft-cooldown.
+            }
+
+            int until = Find.TickManager.TicksGame + Rand.RangeInclusive(min, max);
+            softCooldowns[abilityDefName] = until;
+        }
+
+        // ============================================================
+        // Прокси к хелперам SignalInterceptorGameComponent.
+        // Скореры дёргают эти методы, не публичные у GameComp.
+        // ============================================================
+
+        public AbilityDef GetAbilityDef(string defName)
+        {
+            return gc.FindAbilityDefByPossibleName_Public(defName);
+        }
+
+        public object GetPawnAbilityObject(AbilityDef def)
+        {
+            return gc.GetPawnAbility_Public(caster, def);
+        }
+
+        public bool IsAbilityOnCooldown(object ability)
+        {
+            return gc.IsAbilityOnCooldown_Public(ability);
+        }
+
+        public bool IsRangedCombatPawn(Pawn p)
+        {
+            return gc.IsRangedCombatPawn_Public(p);
+        }
+    }
+}
