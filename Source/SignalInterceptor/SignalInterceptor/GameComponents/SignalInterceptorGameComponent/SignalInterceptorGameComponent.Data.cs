@@ -53,6 +53,14 @@ namespace SignalInterceptor
         public int psycasterComboTargetThingId = -1;
         public int psycasterComboStage = 0;
         public int psycasterComboExpireTick = -1;
+        public int psycasterMode = 0;
+        public int psycasterModeUntilTick = -1;
+        public int psycasterModeTargetThingId = -1;
+        public int psycasterNextThinkTick = -1;
+
+        public int psycasterLastBlindingPulseTick = -999999;
+        public int psycasterLastVertigoPulseTick = -999999;
+        public int psycasterLastBerserkPulseTick = -999999;
 
         public void ExposeData()
         {
@@ -81,6 +89,15 @@ namespace SignalInterceptor
             Scribe_Values.Look(ref psycasterComboTargetThingId, "psycasterComboTargetThingId", -1);
             Scribe_Values.Look(ref psycasterComboStage, "psycasterComboStage", 0);
             Scribe_Values.Look(ref psycasterComboExpireTick, "psycasterComboExpireTick", -1);
+
+            Scribe_Values.Look(ref psycasterMode, "psycasterMode", 0);
+            Scribe_Values.Look(ref psycasterModeUntilTick, "psycasterModeUntilTick", -1);
+            Scribe_Values.Look(ref psycasterModeTargetThingId, "psycasterModeTargetThingId", -1);
+            Scribe_Values.Look(ref psycasterNextThinkTick, "psycasterNextThinkTick", -1);
+
+            Scribe_Values.Look(ref psycasterLastBlindingPulseTick, "psycasterLastBlindingPulseTick", -999999);
+            Scribe_Values.Look(ref psycasterLastVertigoPulseTick, "psycasterLastVertigoPulseTick", -999999);
+            Scribe_Values.Look(ref psycasterLastBerserkPulseTick, "psycasterLastBerserkPulseTick", -999999);
         }
     }
 
