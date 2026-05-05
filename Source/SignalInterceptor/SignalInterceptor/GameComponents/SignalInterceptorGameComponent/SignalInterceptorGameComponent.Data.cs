@@ -50,6 +50,9 @@ namespace SignalInterceptor
         public int psycasterMeleeCommitTargetThingId = -1;
         public int psycasterMeleeCommitUntilTick = -1;
         public int psycasterLastInvisibilityTick = -999999;
+        public int psycasterComboTargetThingId = -1;
+        public int psycasterComboStage = 0;
+        public int psycasterComboExpireTick = -1;
 
         public void ExposeData()
         {
@@ -75,6 +78,9 @@ namespace SignalInterceptor
             Scribe_Values.Look(ref psycasterMeleeCommitTargetThingId, "psycasterMeleeCommitTargetThingId", -1);
             Scribe_Values.Look(ref psycasterMeleeCommitUntilTick, "psycasterMeleeCommitUntilTick", -1);
             Scribe_Values.Look(ref psycasterLastInvisibilityTick, "psycasterLastInvisibilityTick", -999999);
+            Scribe_Values.Look(ref psycasterComboTargetThingId, "psycasterComboTargetThingId", -1);
+            Scribe_Values.Look(ref psycasterComboStage, "psycasterComboStage", 0);
+            Scribe_Values.Look(ref psycasterComboExpireTick, "psycasterComboExpireTick", -1);
         }
     }
 
