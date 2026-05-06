@@ -95,6 +95,8 @@ namespace SignalInterceptor.AI.Psycaster
             scorers.Add(new Scorer_Beckon());
             // scorers.Add(new Scorer_Smokepop());
             scorers.Add(new Scorer_Skipshield());
+            // Пачка 5.1 — ближний бой
+            scorers.Add(new Scorer_MeleeAttack());
 
             // Пачка 6: ситуативные
             // scorers.Add(new Scorer_Berserk());
@@ -251,6 +253,22 @@ namespace SignalInterceptor.AI.Psycaster
 
             bool casted = false;
 
+            // === Pack 5.1: специальная обработка псевдо-melee scorer'а ===
+            if (action.abilityDefName == "MeleeAttack_Pseudo" && action.targetPawn != null)
+            {
+                gc.InterruptBadPsycasterCombatJob_Public(caster, action.targetPawn);
+                casted = gc.TryForcePsycasterMeleeAttack_Public(caster, action.targetPawn);
+                if (casted)
+                {
+                    nextActionSelectTick = Find.TickManager.TicksGame + 30;
+                    Log.Message("[Signal Interceptor] Psycaster melee: " + action.targetPawn.LabelShort
+                                + " | score=" + action.score.ToString("F2")
+                                + " | stance=" + currentStance);
+                }
+                LastChosenAction = action;
+                return;
+            }
+
             switch (action.targetType)
             {
                 case ScoredActionTargetType.Self:
@@ -287,7 +305,7 @@ namespace SignalInterceptor.AI.Psycaster
                 int warmup = action.castWarmupTicks > 0
                     ? action.castWarmupTicks
                     : PsycasterTuning.CastWarmupMedium;
-                nextActionSelectTick = Find.TickManager.TicksGame + warmup + 15;
+                nextActionSelectTick = Find.TickManager.TicksGame + warmup + 30;
 
                 Log.Message("[Signal Interceptor] Psycaster action: " + action.abilityDefName
                             + " | score=" + action.score.ToString("F2")
@@ -421,6 +439,26 @@ namespace SignalInterceptor.AI.Psycaster
             int max = 0;
             switch (abilityDefName)
             {
+                case "Stun":
+                    min = PsycasterTuning.StunSoftCooldownMin;
+                    max = PsycasterTuning.StunSoftCooldownMax;
+                    break;
+                case "Skip":
+                    min = PsycasterTuning.SkipSoftCooldownMin;
+                    max = PsycasterTuning.SkipSoftCooldownMax;
+                    break;
+                case "ChaosSkip":
+                    min = PsycasterTuning.ChaosSkipSoftCooldownMin;
+                    max = PsycasterTuning.ChaosSkipSoftCooldownMax;
+                    break;
+                case "MassChaosSkip":
+                    min = PsycasterTuning.MassChaosSkipSoftCooldownMin;
+                    max = PsycasterTuning.MassChaosSkipSoftCooldownMax;
+                    break;
+                case "Beckon":
+                    min = PsycasterTuning.BeckonSoftCooldownMin;
+                    max = PsycasterTuning.BeckonSoftCooldownMax;
+                    break;
                 case "BlindingPulse":
                     min = PsycasterTuning.BlindingPulseSoftCooldownMin;
                     max = PsycasterTuning.BlindingPulseSoftCooldownMax;

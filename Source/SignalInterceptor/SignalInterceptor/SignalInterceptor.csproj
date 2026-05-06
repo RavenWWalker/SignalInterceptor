@@ -70,6 +70,7 @@
     <Compile Include="AI\Psycaster\Scorers\Scorer_BlindingPulse.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_ChaosSkip.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_MassChaosSkip.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_MeleeAttack.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Skip.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Skipshield.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Stun.cs" />

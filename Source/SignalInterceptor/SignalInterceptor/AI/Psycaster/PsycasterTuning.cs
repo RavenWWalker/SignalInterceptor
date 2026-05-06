@@ -149,7 +149,7 @@
         public const float W_Opening_Wallraise = 0.4f;
         public const float W_Opening_Skipshield = 0.3f;
         public const float W_Opening_Invisibility = 0.0f;
-        public const float W_Opening_Beckon = 0.7f;
+        public const float W_Opening_Beckon = 0.5f;
 
         // Скоры — Kite
         public const float W_Kite_Focus = 0.5f;
@@ -166,7 +166,7 @@
         public const float W_Kite_Wallraise = 0.8f;
         public const float W_Kite_Skipshield = 0.7f;
         public const float W_Kite_Invisibility = 1.0f;
-        public const float W_Kite_Beckon = 1.2f;
+        public const float W_Kite_Beckon = 0.6f;
 
         // Скоры — Disengage
         public const float W_Disengage_Focus = 0.0f;
@@ -200,7 +200,7 @@
         public const float W_CrowdControl_Wallraise = 0.5f;
         public const float W_CrowdControl_Skipshield = 0.6f;
         public const float W_CrowdControl_Invisibility = 0.5f;
-        public const float W_CrowdControl_Beckon = 0.5f;
+        public const float W_CrowdControl_Beckon = 0.4f;
 
         // Скоры — Hunt
         public const float W_Hunt_Focus = 0.5f;
@@ -217,7 +217,7 @@
         public const float W_Hunt_Wallraise = 0.3f;
         public const float W_Hunt_Skipshield = 0.4f;
         public const float W_Hunt_Invisibility = 3.0f;
-        public const float W_Hunt_Beckon = 1.7f;
+        public const float W_Hunt_Beckon = 1.9f;
 
         // Скоры — Engulfed
         public const float W_Engulfed_Focus = 0.0f;
@@ -288,5 +288,17 @@
         public const int CastWarmupShort = 30;        // Stun, Skip
         public const int CastWarmupMedium = 60;       // BlindingPulse, VertigoPulse
         public const int CastWarmupLong = 120;        // BerserkPulse, ManhunterPulse, Wallraise
+
+        // === Pack 5.1: soft-CD для способностей, которые забыли в Pack 3 ===
+        public const int StunSoftCooldownMin = 240;  // 4 секунды
+        public const int StunSoftCooldownMax = 360;  // 6 секунд
+        public const int SkipSoftCooldownMin = 300;
+        public const int SkipSoftCooldownMax = 480;
+        public const int ChaosSkipSoftCooldownMin = 240;
+        public const int ChaosSkipSoftCooldownMax = 420;
+        public const int MassChaosSkipSoftCooldownMin = 900;  // 15 секунд — дорогая
+        public const int MassChaosSkipSoftCooldownMax = 1500;
+        public const int BeckonSoftCooldownMin = 600;  // 10 секунд — иначе спамим
+        public const int BeckonSoftCooldownMax = 900;
     }
 }
