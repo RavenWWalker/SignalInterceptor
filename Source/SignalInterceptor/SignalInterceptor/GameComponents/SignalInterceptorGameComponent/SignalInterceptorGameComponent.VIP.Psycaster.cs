@@ -221,10 +221,10 @@ namespace SignalInterceptor
 
             string[] possibleDefs =
             {
-                "StoneskinGland",
-                "StoneSkinGland",
-                "ArmorSkinGland_Stone"
-            };
+        "StoneskinGland",
+        "StoneSkinGland",
+        "ArmorSkinGland_Stone"
+    };
 
             for (int i = 0; i < possibleDefs.Length; i++)
             {
@@ -236,14 +236,11 @@ namespace SignalInterceptor
                 if (pawn.health.hediffSet.HasHediff(def))
                     return;
 
-                BodyPartRecord part = FindTorsoBodyPart(pawn);
-
-                if (part == null)
-                    part = pawn.RaceProps?.body?.corePart;
+                BodyPartRecord part = FindPsycasterTorsoPart(pawn);
 
                 if (part == null)
                 {
-                    Log.Warning("[Signal Interceptor] Could not find torso/core body part for stoneskin gland. Pawn="
+                    Log.Warning("[Signal Interceptor] Could not find torso for stoneskin gland. Pawn="
                                 + pawn.LabelShort
                                 + " | Hediff="
                                 + def.defName);
@@ -270,6 +267,8 @@ namespace SignalInterceptor
                                 + pawn.LabelShort
                                 + " | Hediff="
                                 + def.defName
+                                + " | Part="
+                                + part.Label
                                 + " | Exception="
                                 + ex);
                     return;
@@ -277,6 +276,48 @@ namespace SignalInterceptor
             }
 
             Log.Warning("[Signal Interceptor] Stoneskin gland HediffDef not found for Psycaster VIP.");
+        }
+
+        private BodyPartRecord FindPsycasterTorsoPart(Pawn pawn)
+        {
+            if (pawn == null || pawn.RaceProps == null || pawn.RaceProps.body == null)
+                return null;
+
+            List<BodyPartRecord> parts = pawn.RaceProps.body.AllParts;
+
+            if (parts == null)
+                return null;
+
+            BodyPartRecord torso = parts.FirstOrDefault(p =>
+                p != null &&
+                p.def != null &&
+                p.def == BodyPartDefOf.Torso);
+
+            if (torso != null)
+                return torso;
+
+            torso = parts.FirstOrDefault(p =>
+                p != null &&
+                p.def != null &&
+                p.def.defName == "Torso");
+
+            if (torso != null)
+                return torso;
+
+            torso = parts.FirstOrDefault(p =>
+                p != null &&
+                p.Label != null &&
+                p.Label.ToLowerInvariant().Contains("torso"));
+
+            if (torso != null)
+                return torso;
+
+            torso = parts.FirstOrDefault(p =>
+                p != null &&
+                p.Label != null &&
+                p.Label.ToLowerInvariant().Contains("торс"));
+
+            return torso;
         }
 
         private BodyPartRecord FindTorsoBodyPart(Pawn pawn)

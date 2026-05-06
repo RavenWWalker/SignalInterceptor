@@ -37,9 +37,9 @@
     <scenarioCanAdd>false</scenarioCanAdd>
     <comps>
       <li Class="SignalInterceptor.HediffCompProperties_PsycasterEntropyStabilizer">
-        <noDamageDelayTicks>600</noDamageDelayTicks>
+        <noDamageDelayTicks>0</noDamageDelayTicks>
         <intervalTicks>60</intervalTicks>
-        <entropyReductionPerInterval>0.65</entropyReductionPerInterval>
+        <entropyReductionPerInterval>1.0</entropyReductionPerInterval>
       </li>
     </comps>
   </HediffDef>

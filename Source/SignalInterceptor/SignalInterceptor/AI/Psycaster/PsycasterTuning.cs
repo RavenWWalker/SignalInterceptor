@@ -162,9 +162,9 @@
         public const float W_Kite_ChaosSkip = 1.0f;
         public const float W_Kite_MassChaosSkip = 1.0f;
         public const float W_Kite_ManhunterPulse = 1.5f;
-        public const float W_Kite_Smokepop = 2.0f;
+        public const float W_Kite_Smokepop = 2.4f;
         public const float W_Kite_Wallraise = 0.4f;
-        public const float W_Kite_Skipshield = 0.7f;
+        public const float W_Kite_Skipshield = 1.4f;
         public const float W_Kite_Invisibility = 1.0f;
         public const float W_Kite_Beckon = 0.6f;
 
@@ -196,9 +196,9 @@
         public const float W_CrowdControl_ChaosSkip = 0.6f;
         public const float W_CrowdControl_MassChaosSkip = 1.6f;
         public const float W_CrowdControl_ManhunterPulse = 2.5f;
-        public const float W_CrowdControl_Smokepop = 1.0f;
+        public const float W_CrowdControl_Smokepop = 1.6f;
         public const float W_CrowdControl_Wallraise = 0.5f;
-        public const float W_CrowdControl_Skipshield = 0.6f;
+        public const float W_CrowdControl_Skipshield = 1.3f;
         public const float W_CrowdControl_Invisibility = 0.5f;
         public const float W_CrowdControl_Beckon = 0.4f;
 
@@ -213,9 +213,9 @@
         public const float W_Hunt_ChaosSkip = 0.3f;
         public const float W_Hunt_MassChaosSkip = 0.3f;
         public const float W_Hunt_ManhunterPulse = 0.5f;
-        public const float W_Hunt_Smokepop = 0.0f;
+        public const float W_Hunt_Smokepop = 1.2f;
         public const float W_Hunt_Wallraise = 0.0f;
-        public const float W_Hunt_Skipshield = 0.4f;
+        public const float W_Hunt_Skipshield = 1.1f;
         public const float W_Hunt_Invisibility = 3.0f;
         public const float W_Hunt_Beckon = 1.9f;
 
@@ -247,10 +247,10 @@
         public const float W_Survive_ChaosSkip = 1.5f;
         public const float W_Survive_MassChaosSkip = 1.6f;
         public const float W_Survive_ManhunterPulse = 1.0f;
-        public const float W_Survive_Smokepop = 2.5f;
+        public const float W_Survive_Smokepop = 3.2f;
         public const float W_Survive_Wallraise = 1.6f;
-        public const float W_Survive_Skipshield = 1.8f;
-        public const float W_Survive_Invisibility = 4.0f;
+        public const float W_Survive_Skipshield = 3.0f;
+        public const float W_Survive_Invisibility = 5.0f;
         public const float W_Survive_Beckon = 0.0f;
 
         // ============================================================

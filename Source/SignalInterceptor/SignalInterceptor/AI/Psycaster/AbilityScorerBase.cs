@@ -47,7 +47,6 @@ namespace SignalInterceptor.AI.Psycaster
             if (brain == null || snap == null || snap.caster == null)
                 return false;
 
-            // Способность есть у пешки?
             AbilityDef def = brain.GetAbilityDef(AbilityDefName);
             if (def == null)
                 return false;
@@ -56,19 +55,19 @@ namespace SignalInterceptor.AI.Psycaster
             if (ability == null)
                 return false;
 
-            // На жёстком cooldown?
             if (brain.IsAbilityOnCooldown(ability))
                 return false;
 
-            // Soft cooldown в Brain (наш собственный, чтобы не спамить)?
             if (brain.IsOnSoftCooldown(AbilityDefName))
                 return false;
 
-            // Хватит ли psyfocus? Используем PsychicEntropy.PsyfocusToHediffsThresholds — проще
-            // спросить у самой ability, может ли она быть применена. Но это дорого, оставим
-            // на ScoreInternal: если способность не сможет — CanApplyOn вернёт false на каст
-            // и мы потеряем тик. Здесь делаем грубую отсечку по psyfocus.
             if (snap.casterPsyfocus < MinPsyfocusFraction)
+                return false;
+
+            // Новый safety layer:
+            // если HP/энтропия/огонь говорят "оставь ресурс на escape",
+            // агрессивные касты временно запрещаются.
+            if (brain.ShouldReservePsycastForEscape(AbilityDefName, snap))
                 return false;
 
             return IsContextuallyAvailable(brain, snap);

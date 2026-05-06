@@ -3,8 +3,10 @@
 namespace SignalInterceptor.AI.Psycaster
 {
     /// <summary>
-    /// Skipshield — самозащитный купол, блокирующий снаряды снаружи.
-    /// Тактика: триггер по HP или плотному огню. Окно для безопасной перезарядки.
+    /// Skipshield.
+    /// Приоритет:
+    /// 1) закрыть опасных дальников куполом, чтобы они не стреляли по кастеру;
+    /// 2) если HP низкое / кастер под огнём — поставить купол на себя.
     /// </summary>
     public class Scorer_Skipshield : AbilityScorerBase
     {
@@ -25,41 +27,96 @@ namespace SignalInterceptor.AI.Psycaster
             }
         }
 
-        protected override float MinPsyfocusFraction { get { return 0.30f; } }
+        protected override float MinPsyfocusFraction { get { return 0.25f; } }
 
         protected override ScoredAction ScoreInternal(PsycasterBrain brain, BattlefieldSnapshot snap)
         {
-            int rangedInLOS = 0;
+            if (snap == null || snap.caster == null || snap.enemies == null)
+                return ScoredAction.None;
+
+            if (snap.casterHasSkipshield)
+                return ScoredAction.None;
+
+            int rangedLos = 0;
+            EnemyAssessment bestRanged = null;
+            float bestThreat = 0f;
+
             for (int i = 0; i < snap.enemies.Count; i++)
             {
                 EnemyAssessment e = snap.enemies[i];
-                if (e == null || e.pawn == null) continue;
-                if (e.role != EnemyRole.Ranged && e.role != EnemyRole.Sniper) continue;
-                if (e.distanceToCaster > PsycasterTuning.WallraiseMaxRangedDist) continue;
-                if (!e.hasLineOfSight) continue;
-                rangedInLOS++;
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (!e.IsRanged)
+                    continue;
+
+                if (!e.hasLineOfSight)
+                    continue;
+
+                if (e.distanceToCaster > PsycasterTuning.StandardPulseRange)
+                    continue;
+
+                rangedLos++;
+
+                if (e.threatScore > bestThreat)
+                {
+                    bestThreat = e.threatScore;
+                    bestRanged = e;
+                }
             }
 
-            bool hpTrigger = snap.casterHpFraction < PsycasterTuning.SkipshieldHpTriggerHp;
-            bool fireTrigger = rangedInLOS >= PsycasterTuning.SkipshieldRangedTrigger;
+            bool hpTrigger = snap.casterHpFraction <= 0.55f;
+            bool fireTrigger = rangedLos >= 2;
+            bool severeFire = rangedLos >= 3 || snap.totalIncomingDps >= 24f;
+            bool entropyDanger = snap.casterEntropyFraction >= 0.70f && snap.casterHpFraction <= 0.65f;
 
-            if (!hpTrigger && !fireTrigger)
+            if (!hpTrigger && !fireTrigger && !severeFire && !entropyDanger)
                 return ScoredAction.None;
 
-            float raw = 1.0f;
+            IntVec3 targetCell = snap.caster.Position;
+            string mode = "self";
+
+            // Если есть опасный дальник на дистанции — первично купол на него/их позицию.
+            // Это режет линию огня и даёт кастеру окно.
+            if (bestRanged != null &&
+                bestRanged.distanceToCaster >= 6f &&
+                GenSight.LineOfSight(snap.caster.Position, bestRanged.pawn.Position, snap.map))
+            {
+                targetCell = bestRanged.pawn.Position;
+                mode = "ranged";
+            }
+
+            float raw = 6f;
+
+            raw += rangedLos * 2.2f;
+            raw += snap.totalIncomingDps / 5f;
+
             if (hpTrigger)
-                raw += (PsycasterTuning.SkipshieldHpTriggerHp - snap.casterHpFraction) * 6f;
-            if (fireTrigger)
-                raw += rangedInLOS * 0.7f;
+                raw += (0.60f - snap.casterHpFraction) * 18f;
+
+            if (severeFire)
+                raw += 8f;
+
+            if (entropyDanger)
+                raw += 5f;
+
+            if (brain.CurrentStance == PsycasterStance.Survive)
+                raw += 10f;
 
             ScoredAction action = new ScoredAction();
             action.abilityDefName = AbilityDefName;
             action.targetType = ScoredActionTargetType.Cell;
-            action.targetCell = brain.Caster.Position;
+            action.targetCell = targetCell;
             action.castWarmupTicks = PsycasterTuning.CastWarmupMedium;
             action.score = raw;
-            action.debugReason = "Skipshield hp=" + snap.casterHpFraction.ToString("F2")
-                                     + " rangedLOS=" + rangedInLOS;
+            action.debugReason =
+                "Skipshield " + mode +
+                " hp=" + snap.casterHpFraction.ToString("F2") +
+                " entropy=" + snap.casterEntropyFraction.ToString("F2") +
+                " rangedLOS=" + rangedLos +
+                " incomingDps=" + snap.totalIncomingDps.ToString("F1");
+
             return action;
         }
     }

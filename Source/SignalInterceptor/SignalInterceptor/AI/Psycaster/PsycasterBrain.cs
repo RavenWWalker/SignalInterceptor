@@ -103,22 +103,22 @@ namespace SignalInterceptor.AI.Psycaster
             scorers.Add(new Scorer_BlindingPulse());
             scorers.Add(new Scorer_VertigoPulse());
 
-            // Пачка 5: мобильность
+            // Пачка 5: мобильность / защита
             scorers.Add(new Scorer_Skip());
             scorers.Add(new Scorer_ChaosSkip());
             scorers.Add(new Scorer_MassChaosSkip());
             scorers.Add(new Scorer_Wallraise());
             scorers.Add(new Scorer_Beckon());
-            // scorers.Add(new Scorer_Smokepop());
             scorers.Add(new Scorer_Skipshield());
+            scorers.Add(new Scorer_Invisibility());
+            scorers.Add(new Scorer_Smokepop());
+
             // Пачка 5.1 — ближний бой
             scorers.Add(new Scorer_MeleeAttack());
 
-            // Пачка 6: ситуативные
+            // Пачка 6: будущие ситуативные
             // scorers.Add(new Scorer_Berserk());
             // scorers.Add(new Scorer_ManhunterPulse());
-            // scorers.Add(new Scorer_Invisibility());
-            // scorers.Add(new Scorer_Beckon());
             // scorers.Add(new Scorer_Focus());
         }
 
@@ -279,6 +279,50 @@ namespace SignalInterceptor.AI.Psycaster
         // ============================================================
         // Выбор действия (action-select)
         // ============================================================
+
+        public bool ShouldReservePsycastForEscape(string abilityDefName, BattlefieldSnapshot snap)
+        {
+            if (string.IsNullOrEmpty(abilityDefName) || snap == null)
+                return false;
+
+            if (snap.caster == null || snap.caster.Dead || snap.caster.Downed)
+                return false;
+
+            bool defensiveAbility =
+                abilityDefName == "Skipshield" ||
+                abilityDefName == "Invisibility" ||
+                abilityDefName == "Smokepop" ||
+                abilityDefName == "Wallraise" ||
+                abilityDefName == "ChaosSkip" ||
+                abilityDefName == "MassChaosSkip";
+
+            if (defensiveAbility)
+                return false;
+
+            int rangedLos = snap.enemiesWithLosToCaster != null
+                ? snap.enemiesWithLosToCaster.Count(e => e != null && e.IsRanged && e.canShootNow)
+                : 0;
+
+            bool lowHp = snap.casterHpFraction <= 0.55f;
+            bool dangerousHp = snap.casterHpFraction <= 0.45f;
+            bool highEntropy = snap.casterEntropyFraction >= 0.72f;
+            bool underRangedPressure = rangedLos >= 2 || snap.totalIncomingDps >= 18f;
+            bool severeRangedPressure = rangedLos >= 3 || snap.totalIncomingDps >= 28f;
+
+            if (dangerousHp && underRangedPressure)
+                return true;
+
+            if (lowHp && severeRangedPressure)
+                return true;
+
+            if (highEntropy && lowHp && underRangedPressure)
+                return true;
+
+            if (currentStance == PsycasterStance.Survive && highEntropy)
+                return true;
+
+            return false;
+        }
 
         private bool TryExecuteDownedPlayerPawn()
         {
