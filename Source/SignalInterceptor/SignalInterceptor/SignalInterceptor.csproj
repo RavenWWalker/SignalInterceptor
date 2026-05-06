@@ -97,8 +97,14 @@
     <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Mechanitor.cs" />
     <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Psycaster.cs" />
     <Compile Include="GameComponents\SignalInterceptorGameComponent\SignalInterceptorGameComponent.VIP.Shuttle.cs" />
+    <Compile Include="Headiffs\HediffCompProperties_PsycasterEntropyStabilizer.cs" />
+    <Compile Include="Headiffs\HediffCompProperties_PsycasterRestoringMechanisms.cs" />
+    <Compile Include="Headiffs\HediffComp_PsycasterEntropyStabilizer.cs" />
+    <Compile Include="Headiffs\HediffComp_PsycasterRestoringMechanisms.cs" />
+    <Compile Include="Headiffs\PsycasterRecoveryUtility.cs" />
     <Compile Include="Patches\Patch_DropShuttle_ClampCell.cs" />
     <Compile Include="Patches\Patch_FactionDialog.cs" />
+    <Compile Include="Patches\Patch_PsycasterDamageTracking.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Quests\Stash\QuestNode_Root_InterceptedStash.cs" />
     <Compile Include="Quests\Stash\QuestPart_FactionGoodwillOnTimeout.cs" />

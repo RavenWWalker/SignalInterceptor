@@ -137,6 +137,7 @@ namespace SignalInterceptor
             }
 
             AddPsycasterTraitIfPossible(pawn, "PsychicSensitivity", 2);
+            EnsurePsycasterVIPSurvivalKit(pawn);
 
             AddOrSetPsycasterPsylinkLevel(pawn, psylinkLevel);
             GivePsycasterVIPAbilities(pawn, psylinkLevel);
@@ -156,6 +157,100 @@ namespace SignalInterceptor
 
             if (skill.passion == Passion.None)
                 skill.passion = passion;
+        }
+
+        private void EnsurePsycasterVIPSurvivalKit(Pawn pawn)
+        {
+            if (pawn == null || pawn.Destroyed || pawn.Dead)
+                return;
+
+            EnsureRunnerTrait(pawn);
+            TryAddStoneskinGland(pawn);
+            TryAddPsycasterVIPHediff(pawn, "SI_RestoringMechanisms");
+            TryAddPsycasterVIPHediff(pawn, "SI_EntropyStabilizer");
+        }
+
+        private void EnsureRunnerTrait(Pawn pawn)
+        {
+            if (pawn == null || pawn.story == null || pawn.story.traits == null)
+                return;
+
+            TraitDef jogger = DefDatabase<TraitDef>.GetNamedSilentFail("Jogger");
+
+            if (jogger == null)
+            {
+                Log.Warning("[Signal Interceptor] Jogger trait def not found for Psycaster VIP.");
+                return;
+            }
+
+            if (pawn.story.traits.HasTrait(jogger))
+                return;
+
+            TraitDef slowpoke = DefDatabase<TraitDef>.GetNamedSilentFail("Slowpoke");
+
+            if (slowpoke != null && pawn.story.traits.HasTrait(slowpoke))
+            {
+                Trait old = pawn.story.traits.GetTrait(slowpoke);
+
+                if (old != null)
+                    pawn.story.traits.RemoveTrait(old);
+            }
+
+            try
+            {
+                pawn.story.traits.GainTrait(new Trait(jogger, 0, true));
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[Signal Interceptor] Failed to add Jogger trait to Psycaster VIP. Pawn=" +
+                            pawn.LabelShort +
+                            " | Exception=" +
+                            ex);
+            }
+        }
+
+        private void TryAddStoneskinGland(Pawn pawn)
+        {
+            string[] possibleDefs =
+            {
+        "StoneskinGland",
+        "StoneSkinGland",
+        "ArmorSkinGland_Stone"
+    };
+
+            for (int i = 0; i < possibleDefs.Length; i++)
+            {
+                HediffDef def = DefDatabase<HediffDef>.GetNamedSilentFail(possibleDefs[i]);
+
+                if (def == null)
+                    continue;
+
+                if (!pawn.health.hediffSet.HasHediff(def))
+                    pawn.health.AddHediff(def);
+
+                return;
+            }
+
+            Log.Warning("[Signal Interceptor] Stoneskin gland HediffDef not found for Psycaster VIP.");
+        }
+
+        private void TryAddPsycasterVIPHediff(Pawn pawn, string defName)
+        {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return;
+
+            HediffDef def = DefDatabase<HediffDef>.GetNamedSilentFail(defName);
+
+            if (def == null)
+            {
+                Log.Warning("[Signal Interceptor] Missing Psycaster VIP hediff def: " + defName);
+                return;
+            }
+
+            if (pawn.health.hediffSet.HasHediff(def))
+                return;
+
+            pawn.health.AddHediff(def);
         }
 
         private void AddPsycasterTraitIfPossible(Pawn pawn, string traitDefName, int degree)

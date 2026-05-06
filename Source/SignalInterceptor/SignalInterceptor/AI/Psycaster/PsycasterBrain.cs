@@ -1,5 +1,6 @@
 ﻿using RimWorld;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Verse;
 using Verse.AI;
@@ -56,6 +57,10 @@ namespace SignalInterceptor.AI.Psycaster
         private float killContractLastDistance = 999f;
         private int killContractLastCloseTick = -1;
         private int killContractEscapeUntilTick = -1;
+        private bool recoveryMode = false;
+        private int recoveryStartedTick = -1;
+        private int nextRecoveryThinkTick = -1;
+        private int nextEmergencyRetreatTick = -1;
 
         private readonly List<IAbilityScorer> scorers = new List<IAbilityScorer>();
 
@@ -181,6 +186,9 @@ namespace SignalInterceptor.AI.Psycaster
             LastSnapshot = snap;
             UpdateKillContractTelemetry(snap);
 
+            if (TryRunRecoveryLogic(snap))
+                return;
+
             if (!snap.HasEnemies)
             {
                 pendingMeleeTargetThingId = -1;
@@ -267,6 +275,163 @@ namespace SignalInterceptor.AI.Psycaster
         // ============================================================
         // Выбор действия (action-select)
         // ============================================================
+
+        private bool TryRunRecoveryLogic(BattlefieldSnapshot snap)
+        {
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed)
+                return false;
+
+            int now = Find.TickManager.TicksGame;
+
+            if (!recoveryMode && ShouldEnterRecoveryMode())
+            {
+                recoveryMode = true;
+                recoveryStartedTick = now;
+                nextRecoveryThinkTick = now;
+
+                pendingMeleeTargetThingId = -1;
+                pendingMeleeUntilTick = -1;
+                pendingMeleeReason = null;
+
+                ClearKillContract("enter recovery");
+
+                Log.Message("[Signal Interceptor] Psycaster entering recovery mode: "
+                            + caster.LabelShort
+                            + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
+                            + " | bleeding=" + HasDangerousBleeding()
+                            + " | canRegen=" + CanRegenerateNow());
+            }
+
+            if (!recoveryMode)
+                return false;
+
+            if (IsRecoveredEnough())
+            {
+                recoveryMode = false;
+                recoveryStartedTick = -1;
+                nextRecoveryThinkTick = -1;
+
+                Log.Message("[Signal Interceptor] Psycaster recovered and re-engaging: "
+                            + caster.LabelShort
+                            + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
+                            + " | bleeding=" + HasDangerousBleeding());
+
+                nextActionSelectTick = now + Rand.RangeInclusive(30, 60);
+                nextStanceReevalTick = now + Rand.RangeInclusive(30, 60);
+
+                return false;
+            }
+
+            if (now < nextRecoveryThinkTick)
+                return true;
+
+            nextRecoveryThinkTick = now + Rand.RangeInclusive(90, 150);
+
+            RunRecoveryMovement(snap);
+
+            return true;
+        }
+
+        private void RunRecoveryMovement(BattlefieldSnapshot snap)
+        {
+            if (!IsCasterFreeToAct())
+                return;
+
+            if (caster.CurJobDef == JobDefOf.Goto)
+                return;
+
+            IntVec3 retreatCell;
+
+            if (snap != null && snap.HasEnemies && TryFindEmergencyRetreatCell(snap, out retreatCell))
+            {
+                Job job = JobMaker.MakeJob(JobDefOf.Goto, retreatCell);
+                job.locomotionUrgency = LocomotionUrgency.Sprint;
+                job.expiryInterval = Rand.RangeInclusive(120, 180);
+
+                caster.jobs.StartJob(job, JobCondition.InterruptForced);
+
+                HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
+
+                Log.Message("[Signal Interceptor] Psycaster recovery retreat: "
+                            + caster.LabelShort
+                            + " -> " + retreatCell
+                            + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
+                            + " | canRegen=" + (restore != null && restore.CanRegenerateNow)
+                            + " | ticksSinceDamage=" + (restore != null ? restore.TicksSinceDamage : -1));
+
+                return;
+            }
+
+            HediffComp_PsycasterRestoringMechanisms comp = GetRestoringMechanisms();
+
+            if (Prefs.DevMode)
+            {
+                Log.Message("[Signal Interceptor] Psycaster recovery holding: "
+                            + caster.LabelShort
+                            + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
+                            + " | canRegen=" + (comp != null && comp.CanRegenerateNow)
+                            + " | ticksSinceDamage=" + (comp != null ? comp.TicksSinceDamage : -1));
+            }
+        }
+
+        private HediffComp_PsycasterRestoringMechanisms GetRestoringMechanisms()
+        {
+            return PsycasterRecoveryUtility.GetRestoringComp(caster);
+        }
+
+        private bool CanRegenerateNow()
+        {
+            HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
+
+            return restore != null && restore.CanRegenerateNow;
+        }
+
+        private bool HasDangerousBleeding()
+        {
+            HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
+
+            if (restore != null)
+                return restore.HasDangerousBleeding();
+
+            if (caster == null || caster.health == null || caster.health.hediffSet == null)
+                return false;
+
+            return caster.health.hediffSet.hediffs
+                .OfType<Hediff_Injury>()
+                .Any(h => h != null && h.Severity > 0f && h.BleedRate > 0.01f);
+        }
+
+        private bool ShouldEnterRecoveryMode()
+        {
+            if (caster == null || caster.health == null)
+                return false;
+
+            float hp = caster.health.summaryHealth.SummaryHealthPercent;
+
+            if (hp <= 0.35f)
+                return true;
+
+            if (hp <= 0.45f && HasDangerousBleeding())
+                return true;
+
+            return false;
+        }
+
+        private bool IsRecoveredEnough()
+        {
+            if (caster == null || caster.health == null)
+                return false;
+
+            float hp = caster.health.summaryHealth.SummaryHealthPercent;
+
+            if (hp < 0.58f)
+                return false;
+
+            if (HasDangerousBleeding())
+                return false;
+
+            return true;
+        }
 
         private bool TryRunPendingMelee(BattlefieldSnapshot snap)
         {
@@ -414,6 +579,11 @@ namespace SignalInterceptor.AI.Psycaster
             if (snap == null || snap.caster == null || !snap.HasEnemies)
                 return false;
 
+            int now = Find.TickManager.TicksGame;
+
+            if (now < nextEmergencyRetreatTick)
+                return false;
+
             // В 1v1 не паникуем слишком рано. Иначе он будет ломать нормальную дуэль.
             bool singleEnemy = snap.enemies != null && snap.enemies.Count == 1;
 
@@ -457,7 +627,8 @@ namespace SignalInterceptor.AI.Psycaster
 
             ApplySoftCooldown("Skip");
 
-            nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupShort + 30;
+            nextEmergencyRetreatTick = Find.TickManager.TicksGame + Rand.RangeInclusive(360, 540);
+            nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupShort + 90;
 
             Log.Message("[Signal Interceptor] Psycaster emergency-retreat Skip self to "
                         + retreatCell
@@ -1157,6 +1328,6 @@ namespace SignalInterceptor.AI.Psycaster
         }
 
         public IntVec3 HomeAnchor = IntVec3.Invalid;
-        public const float MaxHomeDistance = 85f;
+        public const float MaxHomeDistance = 120f;
     }
 }
