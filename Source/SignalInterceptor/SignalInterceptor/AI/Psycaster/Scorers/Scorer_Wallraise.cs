@@ -29,6 +29,16 @@ namespace SignalInterceptor.AI.Psycaster
 
         protected override ScoredAction ScoreInternal(PsycasterBrain brain, BattlefieldSnapshot snap)
         {
+            // В обычной дуэли Wallraise слишком часто становится "мусорным" действием:
+            // score маленький, но если другие scorers временно невалидны, он всё равно выбирается.
+            // Против одиночного дальника лучше использовать Skip/Beckon/Blind/Vertigo/melee.
+            if (snap.enemies != null &&
+                snap.enemies.Count == 1 &&
+                brain.CurrentStance != PsycasterStance.Survive &&
+                snap.casterHpFraction > 0.45f)
+            {
+                return ScoredAction.None;
+            }
             // В дуэли Wallraise не должен перебивать добивание цели.
             // Иначе получается: Skip/Beckon -> melee -> Wallraise -> цель снова уходит.
             if (snap.enemies != null &&

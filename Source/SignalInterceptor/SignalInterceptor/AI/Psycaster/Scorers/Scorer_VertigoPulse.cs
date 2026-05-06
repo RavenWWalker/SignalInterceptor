@@ -38,6 +38,10 @@ namespace SignalInterceptor.AI.Psycaster
             IntVec3 bestCell = IntVec3.Invalid;
             int bestHits = 0;
             int bestMeleeHits = 0;
+            float bestScore = 0f;
+            string reason = null;
+
+            bool singleEnemy = snap.enemies.Count == 1;
 
             for (int i = 0; i < snap.enemies.Count; i++)
             {
@@ -69,18 +73,72 @@ namespace SignalInterceptor.AI.Psycaster
                     }
                 }
 
-                if (hits < 2) continue;
+                float score = 0f;
+                string localReason = null;
 
-                // Предпочитаем точку, где больше ближников (VertigoPulse сильнее против них).
-                if (hits > bestHits || (hits == bestHits && meleeHits > bestMeleeHits))
+                if (hits >= 2)
                 {
+                    score = hits + meleeHits * 0.5f;
+
+                    localReason = "VertigoPulse hitting " + hits
+                                  + " enemies (" + meleeHits + " melee)";
+                }
+                else if (singleEnemy)
+                {
+                    EnemyAssessment e = center;
+
+                    if (e.IsMechanoid)
+                        continue;
+
+                    if (e.distanceToCaster < 6f)
+                        continue;
+
+                    bool dangerous =
+                        e.role == EnemyRole.Sniper ||
+                        e.role == EnemyRole.Heavy ||
+                        e.threatScore >= 18f ||
+                        brain.IsAntiKiteEscapeTarget(e.pawn);
+
+                    if (!dangerous)
+                        continue;
+
+                    // Vertigo как single-target suppression:
+                    // чуть слабее, чем Blinding против чистого стрелка,
+                    // но хорош как резервный контроль, если Blinding/Skip/Beckon недоступны.
+                    score = 8f + (e.threatScore / 12f) + (e.distanceToCaster * 0.06f);
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        score *= 1.20f;
+
+                    if (brain.IsAntiKiteEscapeTarget(e.pawn))
+                        score *= 1.30f;
+
+                    if (brain.IsKillContractTarget(e.pawn))
+                        score *= 1.10f;
+
+                    localReason = "Single-target VertigoPulse "
+                                  + e.pawn.LabelShort
+                                  + " role=" + e.role
+                                  + " threat=" + e.threatScore.ToString("F1")
+                                  + " d=" + e.distanceToCaster.ToString("F1")
+                                  + " antiKite=" + brain.IsAntiKiteEscapeTarget(e.pawn);
+                }
+                else
+                {
+                    continue;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
                     bestHits = hits;
                     bestMeleeHits = meleeHits;
                     bestCell = cell;
+                    reason = localReason;
                 }
             }
 
-            if (!bestCell.IsValid)
+            if (!bestCell.IsValid || bestScore <= 0f)
                 return ScoredAction.None;
 
             ScoredAction action = new ScoredAction();
@@ -88,12 +146,8 @@ namespace SignalInterceptor.AI.Psycaster
             action.targetCell = bestCell;
             action.targetType = ScoredActionTargetType.Cell;
             action.castWarmupTicks = PsycasterTuning.CastWarmupMedium;
-
-            // Базовый score = число целей + бонус за каждого ближника в зоне.
-            float baseScore = bestHits + bestMeleeHits * 0.5f;
-
-            action.score = baseScore;
-            action.debugReason = "VertigoPulse hitting " + bestHits + " enemies (" + bestMeleeHits + " melee)";
+            action.score = bestScore;
+            action.debugReason = reason ?? ("VertigoPulse score=" + bestScore.ToString("F1"));
 
             return action;
         }

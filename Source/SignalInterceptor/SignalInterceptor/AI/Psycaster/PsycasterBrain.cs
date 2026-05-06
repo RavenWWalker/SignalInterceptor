@@ -324,11 +324,41 @@ namespace SignalInterceptor.AI.Psycaster
                 ? targetAssessment.distanceToCaster
                 : caster.Position.DistanceTo(target.Position);
 
-            // КЛЮЧЕВОЙ ФИКС ДЛЯ JUMP PACK:
-            // если цель была в melee contract и резко сбежала на 10+ клеток,
-            // не продолжаем тупо pending-melee пешком.
-            // Отпускаем управление в action selection, чтобы Skip/Beckon/Blind/Vertigo
-            // могли вернуть или подавить цель.
+            bool targetControlled = false;
+
+            if (targetAssessment != null)
+                targetControlled = targetAssessment.isStunned || targetAssessment.isMindControlled || WasPawnRecentlyMoved(target);
+            else
+                targetControlled = WasPawnRecentlyMoved(target);
+
+            bool singleEnemy = snap.enemies.Count == 1;
+            bool fallback1v1 = pendingMeleeReason == "Fallback1v1";
+            bool targetIsRanged = targetAssessment != null && targetAssessment.IsRanged;
+
+            // ВАЖНО:
+            // Fallback1v1 больше не имеет права держать long melee-pursuit с 20-30 клеток.
+            // Иначе он блокирует action selection, и AI не выбирает Skip/Beckon/Pulse.
+            if (fallback1v1 &&
+                singleEnemy &&
+                targetIsRanged &&
+                !targetControlled &&
+                d > 8f)
+            {
+                pendingMeleeTargetThingId = -1;
+                pendingMeleeUntilTick = -1;
+                pendingMeleeReason = null;
+
+                nextActionSelectTick = now;
+
+                Log.Message("[Signal Interceptor] Psycaster pending-melee released for ranged duel tools: "
+                            + target.LabelShort
+                            + " | d=" + d.ToString("F1"));
+
+                return false;
+            }
+
+            // Если цель была в melee-contract и резко сбежала, не продолжаем тупо бежать пешком.
+            // Отдаём управление action selection, чтобы сработал Skip/Beckon/Blind/Vertigo.
             if (IsAntiKiteEscapeTarget(target) && d > 6f)
             {
                 nextActionSelectTick = now;
@@ -354,8 +384,6 @@ namespace SignalInterceptor.AI.Psycaster
                             + " | reason=" + (pendingMeleeReason ?? "unknown")
                             + " | d=" + d.ToString("F1"));
 
-                // pending можно очистить, когда цель реально рядом.
-                // Но kill-contract остаётся отдельно и продолжает держать намерение убить.
                 if (d <= 1.8f)
                 {
                     pendingMeleeTargetThingId = -1;
@@ -857,8 +885,38 @@ namespace SignalInterceptor.AI.Psycaster
             bool targetRecentlyControlled = WasPawnRecentlyMoved(top.pawn);
             bool targetControlled = top.isStunned || top.isMindControlled || targetRecentlyControlled;
 
-            // В 1v1 fallback никогда не должен отступать от уже выбранной цели.
-            // Если скореры ничего умного не нашли — бей/преследуй.
+            // 1v1 против дальника:
+            // НЕ включаем pending-melee с 20-30 клеток.
+            // Это должно дать шанс action selection выбрать Skip/Beckon/Blind/Vertigo.
+            if (singleEnemy &&
+                top.IsRanged &&
+                currentStance != PsycasterStance.Survive &&
+                top.distanceToCaster > 8f &&
+                !targetControlled)
+            {
+                IntVec3 approachCell = ComputeApproachCell(caster.Position, top.pawn.Position, 12f);
+
+                if (approachCell.IsValid &&
+                    approachCell.InBounds(caster.Map) &&
+                    approachCell.Standable(caster.Map))
+                {
+                    Job job = JobMaker.MakeJob(JobDefOf.Goto, approachCell);
+                    job.locomotionUrgency = LocomotionUrgency.Jog;
+                    caster.jobs.StartJob(job, JobCondition.InterruptForced);
+
+                    nextActionSelectTick = Find.TickManager.TicksGame + 45;
+
+                    Log.Message("[Signal Interceptor] Psycaster duel-approach, preserving ranged tools: "
+                                + top.pawn.LabelShort
+                                + " | d=" + top.distanceToCaster.ToString("F1")
+                                + " | role=" + top.role
+                                + " | stance=" + currentStance);
+                }
+
+                return;
+            }
+
+            // Если цель уже близко или контролится — добиваем.
             if (singleEnemy && currentStance != PsycasterStance.Survive && top.distanceToCaster <= 30f)
             {
                 QueuePendingMelee(top.pawn, 240, "Fallback1v1");

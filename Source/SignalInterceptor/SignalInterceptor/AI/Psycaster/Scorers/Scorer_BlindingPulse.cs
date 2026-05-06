@@ -33,11 +33,13 @@ namespace SignalInterceptor.AI.Psycaster
             if (snap.enemies == null || snap.enemies.Count == 0)
                 return ScoredAction.None;
 
-            // Ищем точку с максимальным числом восприимчивых врагов в радиусе ClusterRadius.
-            // Подходящие центры — позиции самих врагов (по аналогии со старым FindBestPsycasterPulseCell).
             IntVec3 bestCell = IntVec3.Invalid;
             int bestHits = 0;
             float bestRangedDpsInRadius = 0f;
+            float bestScore = 0f;
+            string reason = null;
+
+            bool singleEnemy = snap.enemies.Count == 1;
 
             for (int i = 0; i < snap.enemies.Count; i++)
             {
@@ -60,27 +62,88 @@ namespace SignalInterceptor.AI.Psycaster
                     EnemyAssessment e = snap.enemies[j];
                     if (e == null || e.pawn == null) continue;
                     if (!e.IsSusceptibleToMindControl && !e.IsAnimal) continue;
-                    if (e.IsMechanoid) continue; // не работает на мехах
+                    if (e.IsMechanoid) continue;
 
-                    if (e.pawn.Position.DistanceTo(cell) <= 4.0f) // радиус эффекта BlindingPulse
+                    if (e.pawn.Position.DistanceTo(cell) <= 4.0f)
                     {
                         hits++;
+
                         if (e.IsRanged && e.canShootNow)
                             rangedDps += e.estimatedDps;
                     }
                 }
 
-                if (hits < 2) continue; // не имеет смысла на одиночку — есть Stun
+                float score = 0f;
+                string localReason = null;
 
-                if (hits > bestHits || (hits == bestHits && rangedDps > bestRangedDpsInRadius))
+                if (hits >= 2)
                 {
+                    score = hits * (1.0f + rangedDps / 30f);
+                    localReason = "BlindingPulse hitting " + hits + " enemies, suppressing "
+                                  + rangedDps.ToString("F1") + " ranged DPS";
+                }
+                else if (singleEnemy)
+                {
+                    EnemyAssessment e = center;
+
+                    // Новый режим: одиночная dangerous ranged цель.
+                    // Это нужно против снайпера/джамп-пака, когда Stun на дистанции запрещён,
+                    // а Skip/Beckon могут быть на cooldown.
+                    if (!e.IsRanged)
+                        continue;
+
+                    if (e.IsMechanoid)
+                        continue;
+
+                    if (!e.hasLineOfSight && !brain.IsAntiKiteEscapeTarget(e.pawn))
+                        continue;
+
+                    if (e.distanceToCaster < 6f)
+                        continue;
+
+                    bool dangerous =
+                        e.role == EnemyRole.Sniper ||
+                        e.role == EnemyRole.Heavy ||
+                        e.threatScore >= 18f ||
+                        brain.IsAntiKiteEscapeTarget(e.pawn);
+
+                    if (!dangerous)
+                        continue;
+
+                    score = 9f + (e.threatScore / 10f) + (e.distanceToCaster * 0.08f);
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        score *= 1.25f;
+
+                    if (brain.IsAntiKiteEscapeTarget(e.pawn))
+                        score *= 1.35f;
+
+                    if (brain.IsKillContractTarget(e.pawn))
+                        score *= 1.10f;
+
+                    localReason = "Single-target BlindingPulse "
+                                  + e.pawn.LabelShort
+                                  + " role=" + e.role
+                                  + " threat=" + e.threatScore.ToString("F1")
+                                  + " d=" + e.distanceToCaster.ToString("F1")
+                                  + " antiKite=" + brain.IsAntiKiteEscapeTarget(e.pawn);
+                }
+                else
+                {
+                    continue;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
                     bestHits = hits;
                     bestRangedDpsInRadius = rangedDps;
                     bestCell = cell;
+                    reason = localReason;
                 }
             }
 
-            if (!bestCell.IsValid)
+            if (!bestCell.IsValid || bestScore <= 0f)
                 return ScoredAction.None;
 
             ScoredAction action = new ScoredAction();
@@ -88,13 +151,8 @@ namespace SignalInterceptor.AI.Psycaster
             action.targetCell = bestCell;
             action.targetType = ScoredActionTargetType.Cell;
             action.castWarmupTicks = PsycasterTuning.CastWarmupMedium;
-
-            // Базовый score = число целей * (1 + норма от подавленного DPS).
-            float baseScore = bestHits * (1.0f + bestRangedDpsInRadius / 30f);
-
-            action.score = baseScore;
-            action.debugReason = "BlindingPulse hitting " + bestHits + " enemies, suppressing "
-                + bestRangedDpsInRadius.ToString("F1") + " ranged DPS";
+            action.score = bestScore;
+            action.debugReason = reason ?? ("BlindingPulse score=" + bestScore.ToString("F1"));
 
             return action;
         }

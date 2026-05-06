@@ -36,6 +36,8 @@ namespace SignalInterceptor.AI.Psycaster
             EnemyAssessment best = null;
             float bestRaw = 0f;
 
+            bool singleEnemy = snap.enemies.Count == 1;
+
             for (int i = 0; i < snap.enemies.Count; i++)
             {
                 EnemyAssessment e = snap.enemies[i];
@@ -51,15 +53,21 @@ namespace SignalInterceptor.AI.Psycaster
 
                 bool antiKiteEscape = brain.IsAntiKiteEscapeTarget(e.pawn);
 
-                // Обычно не дёргаем недавно перемещённую цель.
-                // Но если она сбежала из melee-contract — Beckon становится fallback после Skip.
                 if (brain.WasPawnRecentlyMoved(e.pawn) && !antiKiteEscape)
                     continue;
 
-                float minUsefulDistance = brain.CurrentStance == PsycasterStance.Hunt ? 12f : 18f;
+                // Старое ограничение 18f в Kite было слишком жёстким.
+                // Из-за него Beckon почти не участвовал в дуэли.
+                float minUsefulDistance = 18f;
+
+                if (singleEnemy)
+                    minUsefulDistance = 10f;
+
+                if (brain.CurrentStance == PsycasterStance.Hunt)
+                    minUsefulDistance = 8f;
 
                 if (antiKiteEscape)
-                    minUsefulDistance = 7f;
+                    minUsefulDistance = 6f;
 
                 if (e.distanceToCaster < minUsefulDistance)
                     continue;
@@ -71,7 +79,7 @@ namespace SignalInterceptor.AI.Psycaster
 
                 if (antiKiteEscape)
                 {
-                    raw = 28f + (e.threatScore / 10f) + (e.distanceToCaster * 0.22f);
+                    raw = 30f + (e.threatScore / 9f) + (e.distanceToCaster * 0.25f);
 
                     if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
                         raw *= 1.25f;
@@ -81,22 +89,19 @@ namespace SignalInterceptor.AI.Psycaster
                 }
                 else
                 {
-                    raw = 0f;
-
-                    raw += e.threatScore / 12f;
-                    raw += e.distanceToCaster * 0.045f;
+                    raw = 6f + (e.threatScore / 12f) + (e.distanceToCaster * 0.10f);
 
                     if (e.hasLineOfSight)
-                        raw *= 1.25f;
+                        raw *= 1.20f;
 
                     if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        raw *= 1.30f;
+
+                    if (singleEnemy)
                         raw *= 1.35f;
 
-                    if (snap.enemies.Count == 1)
-                        raw *= 1.25f;
-
-                    if (e.distanceToCaster <= PsycasterTuning.KiteIdealDistance)
-                        raw *= 0.65f;
+                    if (brain.IsKillContractTarget(e.pawn))
+                        raw *= 1.15f;
                 }
 
                 if (raw > bestRaw)
@@ -119,6 +124,7 @@ namespace SignalInterceptor.AI.Psycaster
                                  + " (role=" + best.role
                                  + ", d=" + best.distanceToCaster.ToString("F1")
                                  + ", antiKite=" + brain.IsAntiKiteEscapeTarget(best.pawn)
+                                 + ", contract=" + brain.IsKillContractTarget(best.pawn)
                                  + ")";
 
             return action;
