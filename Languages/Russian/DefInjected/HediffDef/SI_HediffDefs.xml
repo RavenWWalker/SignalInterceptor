@@ -9,4 +9,11 @@
   <SI_DoppelgangerMark.label>двойник</SI_DoppelgangerMark.label>
   <SI_DoppelgangerMark.description>Эта пешка — клон, один из множества идентичных двойников.</SI_DoppelgangerMark.description>
   <SI_DoppelgangerMark.stages.0.label>клон</SI_DoppelgangerMark.stages.0.label>
+
+  <SI_RestoringMechanisms.label>восстанавливающие архо-механиты</SI_RestoringMechanisms.label>
+  <SI_RestoringMechanisms.description>Продвинутые архо-механиты, которые восстанавливают тело пси-кастера. Их отличительным недостатком является неспособность регенерировать живую ткань во время прямых столкновений.</SI_RestoringMechanisms.description>
+
+  <SI_EntropyStabilizer.label>стабилизатор энтропии</SI_EntropyStabilizer.label>
+  <SI_EntropyStabilizer.description>Псионический стабилизатор, помогающий пси-кастеру быстрее восстанавливаться от нейроперегрева после выхода из боя.</SI_EntropyStabilizer.description>
+
 </LanguageData>

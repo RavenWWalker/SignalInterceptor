@@ -295,6 +295,10 @@ namespace SignalInterceptor.AI.Psycaster
 
                 ClearKillContract("enter recovery");
 
+                currentStance = PsycasterStance.Survive;
+                nextStanceReevalTick = now + Rand.RangeInclusive(180, 300);
+                nextActionSelectTick = now;
+
                 Log.Message("[Signal Interceptor] Psycaster entering recovery mode: "
                             + caster.LabelShort
                             + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
@@ -335,6 +339,11 @@ namespace SignalInterceptor.AI.Psycaster
         private void RunRecoveryMovement(BattlefieldSnapshot snap)
         {
             if (!IsCasterFreeToAct())
+                return;
+
+            // В recovery режиме пси-кастер имеет право сначала прожать emergency Skip.
+            // Иначе он может умереть от огня до того, как 15 секунд без урона вообще начнутся.
+            if (snap != null && snap.HasEnemies && TryEmergencyRetreat(snap))
                 return;
 
             if (caster.CurJobDef == JobDefOf.Goto)
@@ -587,9 +596,17 @@ namespace SignalInterceptor.AI.Psycaster
             // В 1v1 не паникуем слишком рано. Иначе он будет ломать нормальную дуэль.
             bool singleEnemy = snap.enemies != null && snap.enemies.Count == 1;
 
+            int adjacentCount = snap.enemiesAdjacent != null ? snap.enemiesAdjacent.Count : 0;
+
             bool criticalHp = snap.casterHpFraction <= 0.30f;
             bool lowHpUnderFire = snap.casterHpFraction <= 0.45f && snap.IsUnderRangedFire && !singleEnemy;
-            bool surrounded = snap.enemiesAdjacent != null && snap.enemiesAdjacent.Count >= 2;
+
+            bool surrounded =
+                adjacentCount >= 3 ||
+                (adjacentCount >= 2 && snap.casterHpFraction <= 0.60f);
+
+            if (!criticalHp && !lowHpUnderFire && !surrounded)
+                return false;
 
             if (!criticalHp && !lowHpUnderFire && !surrounded)
                 return false;
@@ -784,7 +801,9 @@ namespace SignalInterceptor.AI.Psycaster
 
             bool escapedFromMelee = wasCloseRecently && d >= 10f;
 
-            if (escapedFromMelee || suddenDistanceBreak)
+            bool alreadyInEscapeWindow = killContractEscapeUntilTick > now;
+
+            if ((escapedFromMelee || suddenDistanceBreak) && !alreadyInEscapeWindow)
             {
                 killContractEscapeUntilTick = now + 180;
 
@@ -794,6 +813,11 @@ namespace SignalInterceptor.AI.Psycaster
                             + " | lastD=" + killContractLastDistance.ToString("F1")
                             + " | reason=" + (killContractReason ?? "unknown"));
             }
+            else if ((escapedFromMelee || suddenDistanceBreak) && alreadyInEscapeWindow)
+            {
+                killContractEscapeUntilTick = Mathf.Max(killContractEscapeUntilTick, now + 60);
+            }
+
 
             killContractLastDistance = d;
         }

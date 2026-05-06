@@ -74,6 +74,9 @@ namespace SignalInterceptor
             if (!CanRegenerateNow)
                 return;
 
+            if (!NeedsBodyRepair(pawn))
+                return;
+
             bool healed = HealBleedingFirst(pawn);
 
             if (!healed)
@@ -81,7 +84,8 @@ namespace SignalInterceptor
 
             ReduceBloodLoss(pawn);
 
-            if (healed && Prefs.DevMode)
+            if (healed && Prefs.DevMode &&
+                (pawn.health.summaryHealth.SummaryHealthPercent < 0.99f || HasDangerousBleeding()))
             {
                 Log.Message(
                     "[Signal Interceptor] Restoring Mechanisms tick: " +
@@ -89,6 +93,19 @@ namespace SignalInterceptor
                     " | hp=" + pawn.health.summaryHealth.SummaryHealthPercent.ToString("F2") +
                     " | ticksSinceDamage=" + TicksSinceDamage);
             }
+        }
+
+        private bool NeedsBodyRepair(Pawn pawn)
+        {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return false;
+
+            if (pawn.health.hediffSet.GetFirstHediffOfDef(HediffDefOf.BloodLoss) != null)
+                return true;
+
+            return pawn.health.hediffSet.hediffs
+                .OfType<Hediff_Injury>()
+                .Any(h => h != null && h.Severity > 0.05f);
         }
 
         private bool HealBleedingFirst(Pawn pawn)

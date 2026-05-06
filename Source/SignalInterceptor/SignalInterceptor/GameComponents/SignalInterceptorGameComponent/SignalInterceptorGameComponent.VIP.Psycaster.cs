@@ -159,15 +159,48 @@ namespace SignalInterceptor
                 skill.passion = passion;
         }
 
-        private void EnsurePsycasterVIPSurvivalKit(Pawn pawn)
+        private void EnsureRunnerTrait(Pawn pawn)
         {
-            if (pawn == null || pawn.Destroyed || pawn.Dead)
+            if (pawn == null || pawn.story == null || pawn.story.traits == null)
                 return;
 
-            EnsureRunnerTrait(pawn);
-            TryAddStoneskinGland(pawn);
-            TryAddPsycasterVIPHediff(pawn, "SI_RestoringMechanisms");
-            TryAddPsycasterVIPHediff(pawn, "SI_EntropyStabilizer");
+            TraitDef speedOffset = DefDatabase<TraitDef>.GetNamedSilentFail("SpeedOffset");
+
+            if (speedOffset == null)
+            {
+                Log.Warning("[Signal Interceptor] SpeedOffset trait def not found for Psycaster VIP.");
+                return;
+            }
+
+            try
+            {
+                List<Trait> existingSpeedTraits = pawn.story.traits.allTraits
+                    .Where(t => t != null && t.def == speedOffset)
+                    .ToList();
+
+                for (int i = 0; i < existingSpeedTraits.Count; i++)
+                {
+                    pawn.story.traits.RemoveTrait(existingSpeedTraits[i]);
+                }
+
+                // SpeedOffset degrees:
+                // -1 = Slowpoke
+                //  1 = Fast walker
+                //  2 = Jogger
+                pawn.story.traits.GainTrait(new Trait(speedOffset, 2, true));
+
+                Log.Message("[Signal Interceptor] Psycaster VIP runner trait applied: "
+                            + pawn.LabelShort
+                            + " | Trait=SpeedOffset"
+                            + " | Degree=2");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[Signal Interceptor] Failed to add runner trait to Psycaster VIP. Pawn="
+                            + pawn.LabelShort
+                            + " | Exception="
+                            + ex);
+            }
         }
 
         private void EnsureRunnerTrait(Pawn pawn)
@@ -175,7 +208,7 @@ namespace SignalInterceptor
             if (pawn == null || pawn.story == null || pawn.story.traits == null)
                 return;
 
-            TraitDef jogger = DefDatabase<TraitDef>.GetNamedSilentFail("Jogger");
+            TraitDef jogger = DefDatabase<TraitDef>.GetNamedSilentFail("SpeedOffset");
 
             if (jogger == null)
             {
@@ -211,6 +244,9 @@ namespace SignalInterceptor
 
         private void TryAddStoneskinGland(Pawn pawn)
         {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return;
+
             string[] possibleDefs =
             {
         "StoneskinGland",
@@ -225,10 +261,49 @@ namespace SignalInterceptor
                 if (def == null)
                     continue;
 
-                if (!pawn.health.hediffSet.HasHediff(def))
-                    pawn.health.AddHediff(def);
+                if (pawn.health.hediffSet.HasHediff(def))
+                    return;
 
-                return;
+                BodyPartRecord part = FindBestBodyPartForHediff(pawn, def);
+
+                if (part == null)
+                {
+                    part = pawn.RaceProps.body.corePart;
+                }
+
+                if (part == null)
+                {
+                    Log.Warning("[Signal Interceptor] Could not find body part for stoneskin gland. Pawn="
+                                + pawn.LabelShort
+                                + " | Hediff="
+                                + def.defName);
+                    return;
+                }
+
+                try
+                {
+                    Hediff hediff = HediffMaker.MakeHediff(def, pawn, part);
+                    pawn.health.AddHediff(hediff, part);
+
+                    Log.Message("[Signal Interceptor] Psycaster VIP stoneskin gland applied: "
+                                + pawn.LabelShort
+                                + " | Hediff="
+                                + def.defName
+                                + " | Part="
+                                + part.Label);
+
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning("[Signal Interceptor] Failed to add stoneskin gland. Pawn="
+                                + pawn.LabelShort
+                                + " | Hediff="
+                                + def.defName
+                                + " | Exception="
+                                + ex);
+                    return;
+                }
             }
 
             Log.Warning("[Signal Interceptor] Stoneskin gland HediffDef not found for Psycaster VIP.");
