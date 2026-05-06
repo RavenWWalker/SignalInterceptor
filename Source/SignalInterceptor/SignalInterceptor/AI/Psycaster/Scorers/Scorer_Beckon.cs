@@ -39,23 +39,48 @@ namespace SignalInterceptor.AI.Psycaster
             for (int i = 0; i < snap.enemies.Count; i++)
             {
                 EnemyAssessment e = snap.enemies[i];
-                if (e == null || e.pawn == null) continue;
-                if (brain.WasPawnRecentlyMoved(e.pawn)) continue;
-                if (e.role != EnemyRole.Ranged && e.role != EnemyRole.Sniper) continue;
-                if (e.distanceToCaster < PsycasterTuning.BeckonMinDistance) continue;
-                if (e.distanceToCaster > PsycasterTuning.BeckonMaxDistance) continue;
 
-                // База: threat + бонус за дистанцию (чем дальше дальник — тем больше выгоды от Beckon).
-                float raw = (e.threatScore / 10f) * 0.8f + (e.distanceToCaster * 0.06f);
+                if (e == null || e.pawn == null)
+                    continue;
 
-                // Толстый damage-dealer карты — приоритет.
-                // Считаем долю threat этой цели от суммарного threat всех врагов.
-                if (e.threatScore >= AverageEnemyThreat(snap) * 1.8f)
-                    raw *= 1.4f;
+                if (!e.IsRanged)
+                    continue;
 
-                // Снайпер — почти всегда главная цель Beckon.
-                if (e.role == EnemyRole.Sniper)
-                    raw *= 1.3f;
+                if (e.isStunned || e.isMindControlled)
+                    continue;
+
+                if (brain.WasPawnRecentlyMoved(e.pawn))
+                    continue;
+
+                // КЛЮЧЕВАЯ ПРАВКА:
+                // Beckon не должен спамиться по цели, которая уже близко.
+                // Если цель в 14-16 клетках — её надо либо давить melee, либо контролить точечно.
+                float minUsefulDistance = brain.CurrentStance == PsycasterStance.Hunt ? 12f : 18f;
+
+                if (e.distanceToCaster < minUsefulDistance)
+                    continue;
+
+                if (e.distanceToCaster > PsycasterTuning.BeckonMaxDistance)
+                    continue;
+
+                // Beckon особенно полезен, когда дальник держит LOS и может стрелять.
+                float raw = 0f;
+
+                raw += e.threatScore / 12f;
+                raw += e.distanceToCaster * 0.045f;
+
+                if (e.hasLineOfSight)
+                    raw *= 1.25f;
+
+                if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                    raw *= 1.35f;
+
+                if (snap.enemies.Count == 1)
+                    raw *= 1.25f;
+
+                // Если он уже прямо на идеальной kite-дистанции, не надо бесконечно его дёргать.
+                if (e.distanceToCaster <= PsycasterTuning.KiteIdealDistance)
+                    raw *= 0.65f;
 
                 if (raw > bestRaw)
                 {
@@ -74,8 +99,9 @@ namespace SignalInterceptor.AI.Psycaster
             action.castWarmupTicks = PsycasterTuning.CastWarmupShort;
             action.score = bestRaw;
             action.debugReason = "Beckon " + best.pawn.LabelShort
-                                     + " (role=" + best.role
-                                     + ", d=" + best.distanceToCaster.ToString("F1") + ")";
+                                 + " (role=" + best.role
+                                 + ", d=" + best.distanceToCaster.ToString("F1") + ")";
+
             return action;
         }
 

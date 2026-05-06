@@ -120,31 +120,14 @@ namespace SignalInterceptor.AI.Psycaster
 
             int now = Find.TickManager.TicksGame;
 
-            // Pack 5.2: якорь — не уходим далеко от точки спавна.
-            if (HomeAnchor.IsValid)
-            {
-                float homeDist = caster.Position.DistanceTo(HomeAnchor);
-                if (homeDist > MaxHomeDistance)
-                {
-                    Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
-                    goHome.locomotionUrgency = LocomotionUrgency.Sprint;
-                    caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
-                    nextActionSelectTick = Find.TickManager.TicksGame + 90;
-                    Log.Message("[Signal Interceptor] Psycaster too far from anchor (d="
-                                + homeDist.ToString("F1") + "), returning home " + HomeAnchor);
-                    return;
-                }
-            }
-
-            // Pack 5.2: NoFlee не нужен, если caster занят кастом или melee.
-            // Дёргать его каждый тик создавало конфликт с warmup-stance.
-            if (Find.TickManager.TicksGame % PsycasterTuning.NoFleeRefreshTicks == 0)
+            // NoFlee не трогаем, если caster занят кастом/атакой.
+            if (now % PsycasterTuning.NoFleeRefreshTicks == 0)
             {
                 if (IsCasterFreeToAct())
                     gc.ForcePsycasterNoFlee_Public(caster, caster.Map);
             }
 
-            // Превентивный Focus один раз на старте боя — пока скорерры не подключены, делаем тут.
+            // Превентивный Focus один раз на старте боя.
             if (!focusBuffApplied && now >= graceUntilTick)
             {
                 if (gc.TryCastSelfPsyAbility_Public(caster, "Focus"))
@@ -153,20 +136,40 @@ namespace SignalInterceptor.AI.Psycaster
                     nextActionSelectTick = now + PsycasterTuning.CastWarmupShort + 30;
                     return;
                 }
-                focusBuffApplied = true; // больше не пытаемся
+
+                focusBuffApplied = true;
             }
 
             // Период «приходит в себя» после спавна / лоада.
             if (now < graceUntilTick)
                 return;
 
-            // Собираем снапшот.
+            // Собираем снапшот ДО anchor-логики.
+            // Важно: anchor не должен перебивать активный бой.
             BattlefieldSnapshot snap = SnapshotBuilder.Build(this);
             LastSnapshot = snap;
 
             if (!snap.HasEnemies)
             {
-                // Врагов нет — попробуем сломать игроку шаттл/корабль (как старый AI делал).
+                // Anchor работает только когда врагов нет.
+                // Раньше он срабатывал во время погони и ломал бой 1v1.
+                if (HomeAnchor.IsValid)
+                {
+                    float homeDist = caster.Position.DistanceTo(HomeAnchor);
+                    if (homeDist > MaxHomeDistance)
+                    {
+                        Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
+                        goHome.locomotionUrgency = LocomotionUrgency.Sprint;
+                        caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
+                        nextActionSelectTick = now + 90;
+
+                        Log.Message("[Signal Interceptor] Psycaster has no enemies and is too far from anchor (d="
+                                    + homeDist.ToString("F1") + "), returning home " + HomeAnchor);
+                        return;
+                    }
+                }
+
+                // Врагов нет — попробуем сломать игроку шаттл/здание.
                 gc.TryAttackPlayerShuttleOrBuilding_Public(caster, caster.Map);
                 return;
             }
@@ -191,6 +194,7 @@ namespace SignalInterceptor.AI.Psycaster
                                 + " | enemies=" + snap.enemies.Count
                                 + " | cluster=" + snap.largestClusterSize);
                 }
+
                 currentStance = newStance;
                 nextStanceReevalTick = now + Rand.RangeInclusive(
                     PsycasterTuning.StanceReevalMinTicks,
@@ -271,22 +275,27 @@ namespace SignalInterceptor.AI.Psycaster
 
         private void ExecuteAction(ScoredAction action, BattlefieldSnapshot snap)
         {
-            if (action == null || !action.IsValid) return;
+            if (action == null || !action.IsValid)
+                return;
 
             bool casted = false;
 
-            // === Pack 5.1: специальная обработка псевдо-melee scorer'а ===
+            // === Псевдо-melee scorer ===
             if (action.abilityDefName == "MeleeAttack_Pseudo" && action.targetPawn != null)
             {
                 gc.InterruptBadPsycasterCombatJob_Public(caster, action.targetPawn);
                 casted = gc.TryForcePsycasterMeleeAttack_Public(caster, action.targetPawn);
+
                 if (casted)
                 {
-                    nextActionSelectTick = Find.TickManager.TicksGame + 30;
+                    nextActionSelectTick = Find.TickManager.TicksGame + 150;
+
                     Log.Message("[Signal Interceptor] Psycaster melee: " + action.targetPawn.LabelShort
                                 + " | score=" + action.score.ToString("F2")
-                                + " | stance=" + currentStance);
+                                + " | stance=" + currentStance
+                                + " | reason=" + (action.debugReason ?? ""));
                 }
+
                 LastChosenAction = action;
                 return;
             }
@@ -299,42 +308,81 @@ namespace SignalInterceptor.AI.Psycaster
 
                 case ScoredActionTargetType.Pawn:
                     if (action.targetPawn != null)
+                    {
                         casted = gc.TryCastPsyAbilityControlled_Public(
-                            caster, action.abilityDefName, action.targetPawn,
-                            PsycasterTuning.StandardPulseRange, true, false);
+                            caster,
+                            action.abilityDefName,
+                            action.targetPawn,
+                            PsycasterTuning.StandardPulseRange,
+                            true,
+                            false);
+                    }
                     break;
 
                 case ScoredActionTargetType.Cell:
                     if (action.targetCell.IsValid)
+                    {
                         casted = gc.TryCastPsyAbilityAtCellControlled_Public(
-                            caster, action.abilityDefName, action.targetCell,
-                            PsycasterTuning.StandardPulseRange, true);
+                            caster,
+                            action.abilityDefName,
+                            action.targetCell,
+                            PsycasterTuning.StandardPulseRange,
+                            true);
+                    }
                     break;
 
                 case ScoredActionTargetType.PawnToDestination:
                     if (action.targetPawn != null && action.destinationCell.IsValid)
+                    {
                         casted = gc.TryCastPsyAbilityToDestination_Public(
-                            caster, action.abilityDefName, action.targetPawn, action.destinationCell);
+                            caster,
+                            action.abilityDefName,
+                            action.targetPawn,
+                            action.destinationCell);
+                    }
                     break;
             }
 
             if (casted)
             {
-                // Pack 5.2: антийо-йо — не двигаем повторно ту же пешку 10 секунд.
                 if (action.targetPawn != null)
                 {
                     string n = action.abilityDefName;
+
                     if (n == "Beckon" || n == "Skip" || n == "ChaosSkip")
+                    {
                         MarkPawnRecentlyMoved(action.targetPawn, 600);
+                    }
+
+                    // Важно:
+                    // Stun тоже помечаем как "цель недавно контролилась".
+                    // Тогда следующий action-select после warmup не будет тупить/держать позицию,
+                    // а почти гарантированно выберет melee commit.
+                    if (n == "Stun")
+                    {
+                        MarkPawnRecentlyMoved(action.targetPawn, 240);
+                    }
                 }
-                // Поставить soft-cooldown по этой способности.
+
                 ApplySoftCooldown(action.abilityDefName);
 
-                // Не дёргать пешку до окончания warmup + небольшой запас.
                 int warmup = action.castWarmupTicks > 0
                     ? action.castWarmupTicks
                     : PsycasterTuning.CastWarmupMedium;
-                nextActionSelectTick = Find.TickManager.TicksGame + warmup + 30;
+
+                int extraDelay = 30;
+
+                // Если станим цель рядом с собой — хотим почти сразу после warmup перейти в melee.
+                if (action.abilityDefName == "Stun" &&
+                    action.targetPawn != null &&
+                    action.targetPawn.Spawned &&
+                    action.targetPawn.Map == caster.Map &&
+                    caster.Position.DistanceTo(action.targetPawn.Position) <= 7f)
+                {
+                    extraDelay = 10;
+                }
+
+                nextActionSelectTick = Find.TickManager.TicksGame + warmup + extraDelay;
 
                 Log.Message("[Signal Interceptor] Psycaster action: " + action.abilityDefName
                             + " | score=" + action.score.ToString("F2")
@@ -345,19 +393,39 @@ namespace SignalInterceptor.AI.Psycaster
 
         private void FallbackBasicAttack(BattlefieldSnapshot snap)
         {
-            // Все скореры на soft-CD или не нашли цель.
-            // НЕ идём в melee fallback — это самоубийство против дальников.
-            // Вместо этого: позиционируемся в окно каста и ждём перезарядки.
-
             EnemyAssessment top = snap.topThreat;
+
             if (top == null || top.pawn == null)
             {
-                // Реально никого нет в snap — оставим старый путь.
                 gc.TryForcePsycasterAttackNearestPlayerPawn_Public(caster, caster.Map);
                 return;
             }
 
-            // Якорь — центр кластера, если он есть, иначе topThreat.
+            bool singleEnemy = snap.enemies != null && snap.enemies.Count == 1;
+            bool targetRecentlyControlled = WasPawnRecentlyMoved(top.pawn);
+            bool targetControlled = top.isStunned || top.isMindControlled || targetRecentlyControlled;
+
+            // 1v1:
+            // если цель рядом, оглушена, только что была притянута/скипнута/станнута —
+            // не держим дистанцию, не тупим, не idle-hold. Идём в melee.
+            if (singleEnemy &&
+                currentStance != PsycasterStance.Survive &&
+                top.distanceToCaster <= 18f &&
+                (targetControlled || top.distanceToCaster <= 8f))
+            {
+                gc.InterruptBadPsycasterCombatJob_Public(caster, top.pawn);
+                gc.TryForcePsycasterMeleeAttack_Public(caster, top.pawn);
+
+                Log.Message("[Signal Interceptor] Psycaster melee-fallback 1v1: "
+                            + top.pawn.LabelShort
+                            + " | d=" + top.distanceToCaster.ToString("F1")
+                            + " | role=" + top.role
+                            + " | controlled=" + targetControlled
+                            + " | stance=" + currentStance);
+
+                return;
+            }
+
             IntVec3 anchor = (snap.largestClusterSize > 0 && snap.largestClusterCenter.IsValid)
                 ? snap.largestClusterCenter
                 : top.pawn.Position;
@@ -366,48 +434,55 @@ namespace SignalInterceptor.AI.Psycaster
             float ideal = PsycasterTuning.KiteIdealDistance;
             float minD = PsycasterTuning.KiteMinDistance;
 
-            // Если стойка явно про melee (Hunt) и ближний враг рядом — атакуем.
-            if (currentStance == PsycasterStance.Hunt && top.distanceToCaster <= 1.6f)
+            if (currentStance == PsycasterStance.Hunt && top.distanceToCaster <= 8f)
             {
                 gc.InterruptBadPsycasterCombatJob_Public(caster, top.pawn);
                 gc.TryForcePsycasterMeleeAttack_Public(caster, top.pawn);
                 return;
             }
 
-            // Уже в окне [min, ideal+2] — стоим, ждём CD. НЕ убегаем!
             if (curDist >= minD && curDist <= ideal + 2f)
             {
                 gc.InterruptBadPsycasterCombatJob_Public(caster, top.pawn);
+
                 Log.Message("[Signal Interceptor] Psycaster idle-hold dist=" + curDist.ToString("F1")
                             + " window=" + minD + "-" + ideal
                             + " stance=" + currentStance);
+
                 return;
             }
 
-            // Слишком далеко от якоря — подходим (но не вплотную).
             if (curDist > ideal + 2f)
             {
                 IntVec3 approachCell = ComputeApproachCell(caster.Position, anchor, ideal);
-                if (approachCell.IsValid && approachCell.InBounds(caster.Map) && approachCell.Standable(caster.Map))
+
+                if (approachCell.IsValid &&
+                    approachCell.InBounds(caster.Map) &&
+                    approachCell.Standable(caster.Map))
                 {
                     Job job = JobMaker.MakeJob(JobDefOf.Goto, approachCell);
                     job.locomotionUrgency = LocomotionUrgency.Jog;
                     caster.jobs.StartJob(job, JobCondition.InterruptForced);
+
                     Log.Message("[Signal Interceptor] Psycaster idle-approach " + approachCell
                                 + " dist " + curDist.ToString("F1") + "->" + ideal.ToString("F0"));
                 }
+
                 return;
             }
 
-            // Слишком близко — отступаем на пару клеток от якоря.
             if (curDist < minD)
             {
                 IntVec3 retreatCell = ComputeRetreatCell(caster.Position, anchor, 4);
-                if (retreatCell.IsValid && retreatCell.InBounds(caster.Map) && retreatCell.Standable(caster.Map))
+
+                if (retreatCell.IsValid &&
+                    retreatCell.InBounds(caster.Map) &&
+                    retreatCell.Standable(caster.Map))
                 {
                     Job job = JobMaker.MakeJob(JobDefOf.Goto, retreatCell);
                     job.locomotionUrgency = LocomotionUrgency.Sprint;
                     caster.jobs.StartJob(job, JobCondition.InterruptForced);
+
                     Log.Message("[Signal Interceptor] Psycaster idle-retreat " + retreatCell);
                 }
             }

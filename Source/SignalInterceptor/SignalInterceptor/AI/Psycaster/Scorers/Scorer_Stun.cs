@@ -35,28 +35,91 @@ namespace SignalInterceptor.AI.Psycaster
             if (snap.enemies == null || snap.enemies.Count == 0)
                 return ScoredAction.None;
 
-            // Ищем лучшую цель: с наивысшим threatScore, в LOS, в радиусе 18, не оглушённую.
             EnemyAssessment best = null;
-            float bestThreat = 0f;
+            float bestScore = 0f;
+
+            bool singleEnemy = snap.enemies.Count == 1;
 
             for (int i = 0; i < snap.enemies.Count; i++)
             {
                 EnemyAssessment e = snap.enemies[i];
-                if (e == null || e.pawn == null) continue;
-                if (!e.hasLineOfSight) continue;
-                if (e.distanceToCaster > 18f) continue;
-                if (e.isStunned) continue;
-                if (e.IsMechanoid) continue; // не тратим Stun на роботов
-                if (e.role == EnemyRole.Wimp) continue; // и на гражданских
 
-                if (e.threatScore > bestThreat)
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (!e.hasLineOfSight)
+                    continue;
+
+                if (e.distanceToCaster > 18f)
+                    continue;
+
+                if (e.isStunned)
+                    continue;
+
+                if (e.IsMechanoid)
+                    continue;
+
+                if (e.role == EnemyRole.Wimp)
+                    continue;
+
+                // Если цель только что была Beckon/Skip'нута и ещё не рядом —
+                // не тратим Stun, пусть пси-кастер добегает/режет.
+                if (singleEnemy && brain.WasPawnRecentlyMoved(e.pawn) && e.distanceToCaster > 4.5f)
+                    continue;
+
+                float score = e.threatScore / 10f;
+
+                if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                    score *= 1.5f;
+
+                if (e.hpFraction < 0.4f)
+                    score *= 1.2f;
+
+                // ============================================================
+                // Главное новое правило:
+                // 1v1 + цель в ближнем бою/почти в ближнем бою.
+                // Стан должен иногда перебивать обычный melee, чтобы дестабилизировать
+                // стрелка/ближника прямо во время схватки.
+                // ============================================================
+
+                if (singleEnemy && e.distanceToCaster <= 1.6f)
                 {
-                    bestThreat = e.threatScore;
+                    score = 36f;
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        score += 8f;
+
+                    if (e.hpFraction < 0.5f)
+                        score += 4f;
+                }
+                else if (singleEnemy && e.distanceToCaster <= 3.5f)
+                {
+                    score = 24f;
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        score += 6f;
+
+                    if (e.hpFraction < 0.5f)
+                        score += 3f;
+                }
+                else if (singleEnemy && e.IsRanged && e.distanceToCaster <= 7f)
+                {
+                    // Стрелок пытается отбежать — станим, чтобы сразу после этого догнать.
+                    score = 14f + (e.threatScore / 20f);
+                }
+
+                // В Survive стан не должен перебивать защитные способности.
+                if (brain.CurrentStance == PsycasterStance.Survive)
+                    score *= 0.35f;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
                     best = e;
                 }
             }
 
-            if (best == null)
+            if (best == null || bestScore <= 0f)
                 return ScoredAction.None;
 
             ScoredAction action = new ScoredAction();
@@ -64,23 +127,11 @@ namespace SignalInterceptor.AI.Psycaster
             action.targetPawn = best.pawn;
             action.targetType = ScoredActionTargetType.Pawn;
             action.castWarmupTicks = PsycasterTuning.CastWarmupShort;
-
-            // Базовый score = threatScore цели, нормализованный.
-            // threatScore обычно в диапазоне 5-30, делим на 10 для приведения к 0.5-3.0.
-            float baseScore = best.threatScore / 10f;
-
-            // Бонус если цель собирается стрелять (Sniper/Heavy с LOS).
-            if (best.role == EnemyRole.Sniper || best.role == EnemyRole.Heavy)
-                baseScore *= 1.5f;
-
-            // Бонус если у цели низкий HP — добивание стандартное.
-            if (best.hpFraction < 0.4f)
-                baseScore *= 1.2f;
-
-            action.score = baseScore;
+            action.score = bestScore;
             action.debugReason = "Stun on " + best.pawn.LabelShort
-                + " (role=" + best.role
-                + ", threat=" + best.threatScore.ToString("F1") + ")";
+                                 + " (role=" + best.role
+                                 + ", threat=" + best.threatScore.ToString("F1")
+                                 + ", d=" + best.distanceToCaster.ToString("F1") + ")";
 
             return action;
         }

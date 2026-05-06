@@ -36,20 +36,52 @@ namespace SignalInterceptor.AI.Psycaster
             EnemyAssessment best = null;
             float bestRaw = 0f;
 
+            bool panicState =
+                brain.CurrentStance == PsycasterStance.Engulfed ||
+                brain.CurrentStance == PsycasterStance.Survive;
+
             for (int i = 0; i < snap.enemies.Count; i++)
             {
                 EnemyAssessment e = snap.enemies[i];
-                if (e == null || e.pawn == null) continue;
-                if (brain.WasPawnRecentlyMoved(e.pawn)) continue;
-                if (e.distanceToCaster > PsycasterTuning.ChaosSkipMaxDistance) continue;
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (brain.WasPawnRecentlyMoved(e.pawn))
+                    continue;
+
+                if (e.distanceToCaster > PsycasterTuning.ChaosSkipMaxDistance)
+                    continue;
+
+                // КЛЮЧЕВАЯ ПРАВКА:
+                // В Kite нельзя ChaosSkip'ать стрелков/снайперов.
+                // Это телепортирует их в случайную клетку и ломает план "притянуть -> оглушить -> зарезать".
+                if (e.IsRanged && !panicState)
+                    continue;
+
+                // В панике можно ChaosSkip'нуть дальника только если он уже почти вплотную.
+                if (e.IsRanged && panicState && e.distanceToCaster > 2.5f)
+                    continue;
 
                 float raw = e.threatScore / 10f;
 
-                // Ближник, который добежал — приоритетный «отпинуть».
-                if (e.role == EnemyRole.Melee) raw *= 1.6f;
+                if (e.IsMelee)
+                    raw *= 1.8f;
 
-                // Очень близко — тем выгоднее сбросить.
-                if (e.distanceToCaster < 4f) raw *= 1.3f;
+                if (e.IsAnimal)
+                    raw *= 1.4f;
+
+                if (e.distanceToCaster <= 2.5f)
+                    raw *= 1.5f;
+                else if (e.distanceToCaster <= 4f)
+                    raw *= 1.25f;
+
+                if (panicState)
+                    raw *= 1.4f;
+
+                // В обычном Kite это только emergency-сброс ближника, не ротационная способность.
+                if (brain.CurrentStance == PsycasterStance.Kite)
+                    raw *= 0.65f;
 
                 if (raw > bestRaw)
                 {
@@ -67,9 +99,10 @@ namespace SignalInterceptor.AI.Psycaster
             action.targetPawn = best.pawn;
             action.castWarmupTicks = PsycasterTuning.CastWarmupShort;
             action.score = bestRaw;
-            action.debugReason = "ChaosSkip close " + best.pawn.LabelShort
-                                     + " (role=" + best.role
-                                     + ", d=" + best.distanceToCaster.ToString("F1") + ")";
+            action.debugReason = "ChaosSkip emergency " + best.pawn.LabelShort
+                                 + " (role=" + best.role
+                                 + ", d=" + best.distanceToCaster.ToString("F1") + ")";
+
             return action;
         }
     }
