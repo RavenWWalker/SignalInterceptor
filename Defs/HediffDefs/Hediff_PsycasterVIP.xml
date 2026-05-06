@@ -39,7 +39,7 @@
       <li Class="SignalInterceptor.HediffCompProperties_PsycasterEntropyStabilizer">
         <noDamageDelayTicks>0</noDamageDelayTicks>
         <intervalTicks>60</intervalTicks>
-        <entropyReductionPerInterval>1.0</entropyReductionPerInterval>
+        <entropyReductionPerInterval>4.0</entropyReductionPerInterval>
       </li>
     </comps>
   </HediffDef>

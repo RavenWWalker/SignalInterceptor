@@ -3,90 +3,84 @@ using Verse;
 
 namespace SignalInterceptor
 {
-    using System.Reflection;
-    using Verse;
-
-    namespace SignalInterceptor
+    public class HediffComp_PsycasterEntropyStabilizer : HediffComp
     {
-        public class HediffComp_PsycasterEntropyStabilizer : HediffComp
+        private int nextTick;
+
+        public HediffCompProperties_PsycasterEntropyStabilizer Props
         {
-            private int nextTick;
+            get { return (HediffCompProperties_PsycasterEntropyStabilizer)props; }
+        }
 
-            public HediffCompProperties_PsycasterEntropyStabilizer Props
+        public override void CompPostTick(ref float severityAdjustment)
+        {
+            base.CompPostTick(ref severityAdjustment);
+
+            Pawn pawn = parent != null ? parent.pawn : null;
+
+            if (pawn == null || pawn.Destroyed || pawn.Dead)
+                return;
+
+            int tick = Find.TickManager.TicksGame;
+
+            if (tick < nextTick)
+                return;
+
+            nextTick = tick + Props.intervalTicks;
+
+            HediffComp_PsycasterRestoringMechanisms restore =
+                PsycasterRecoveryUtility.GetRestoringComp(pawn);
+
+            if (restore != null && restore.RecentlyDamaged)
+                return;
+
+            TryReduceEntropy(pawn, Props.entropyReductionPerInterval);
+        }
+
+        private static void TryReduceEntropy(Pawn pawn, float amount)
+        {
+            if (pawn == null || pawn.psychicEntropy == null)
+                return;
+
+            try
             {
-                get { return (HediffCompProperties_PsycasterEntropyStabilizer)props; }
-            }
+                object tracker = pawn.psychicEntropy;
+                System.Type type = tracker.GetType();
 
-            public override void CompPostTick(ref float severityAdjustment)
-            {
-                base.CompPostTick(ref severityAdjustment);
+                MethodInfo tryAddEntropy = type.GetMethod(
+                    "TryAddEntropy",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(float) },
+                    null);
 
-                Pawn pawn = parent != null ? parent.pawn : null;
-
-                if (pawn == null || pawn.Destroyed || pawn.Dead)
-                    return;
-
-                int tick = Find.TickManager.TicksGame;
-
-                if (tick < nextTick)
-                    return;
-
-                nextTick = tick + Props.intervalTicks;
-
-                HediffComp_PsycasterRestoringMechanisms restore =
-                    PsycasterRecoveryUtility.GetRestoringComp(pawn);
-
-                if (restore != null && restore.RecentlyDamaged)
-                    return;
-
-                TryReduceEntropy(pawn, Props.entropyReductionPerInterval);
-            }
-
-            private static void TryReduceEntropy(Pawn pawn, float amount)
-            {
-                if (pawn == null || pawn.psychicEntropy == null)
-                    return;
-
-                try
+                if (tryAddEntropy != null)
                 {
-                    object tracker = pawn.psychicEntropy;
-                    System.Type type = tracker.GetType();
-
-                    MethodInfo tryAddEntropy = type.GetMethod(
-                        "TryAddEntropy",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                        null,
-                        new[] { typeof(float) },
-                        null);
-
-                    if (tryAddEntropy != null)
-                    {
-                        tryAddEntropy.Invoke(tracker, new object[] { -amount });
-                        return;
-                    }
-
-                    FieldInfo field = type.GetField(
-                        "currentEntropy",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-                    if (field != null && field.FieldType == typeof(float))
-                    {
-                        float current = (float)field.GetValue(tracker);
-                        field.SetValue(tracker, UnityEngine.Mathf.Max(0f, current - amount));
-                    }
+                    tryAddEntropy.Invoke(tracker, new object[] { -amount });
+                    return;
                 }
-                catch
+
+                FieldInfo field = type.GetField(
+                    "currentEntropy",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                if (field != null && field.FieldType == typeof(float))
                 {
-                    // Не ломаем AI, если RimWorld internals отличаются.
+                    float current = (float)field.GetValue(tracker);
+                    field.SetValue(tracker, UnityEngine.Mathf.Max(0f, current - amount));
                 }
             }
-
-            public override void CompExposeData()
+            catch
             {
-                base.CompExposeData();
-
-                Scribe_Values.Look(ref nextTick, "nextTick", 0);
+                // Не ломаем AI, если RimWorld internals отличаются.
             }
+        }
+
+        public override void CompExposeData()
+        {
+            base.CompExposeData();
+
+            Scribe_Values.Look(ref nextTick, "nextTick", 0);
         }
     }
 }

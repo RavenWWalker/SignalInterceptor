@@ -659,11 +659,11 @@ namespace SignalInterceptor
                 return;
 
             // Ленивая инициализация мозга. Создаётся при первом тике
-            // (включая первый тик после загрузки сейва).
+            // включая первый тик после загрузки сейва.
             if (data.psycasterBrain == null)
             {
-                data.psycasterBrain = new SignalInterceptor.AI.Psycaster.PsycasterBrain(this, psycaster);
-                // Pack 5.2: якорь — точка спавна или signalCampCenter.
+                data.psycasterBrain = new global::SignalInterceptor.AI.Psycaster.PsycasterBrain(this, psycaster);
+
                 data.psycasterBrain.HomeAnchor = data.signalCampCenter.IsValid
                     ? data.signalCampCenter
                     : psycaster.Position;
