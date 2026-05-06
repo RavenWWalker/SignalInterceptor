@@ -57,7 +57,10 @@ namespace SignalInterceptor
             PlanetTile tile = PlanetTile.Invalid;
             int siteSignalTier = 0;
 
-            List<Faction> shuffledFactions = validFactions.InRandomOrder().ToList();
+            List<Faction> shuffledFactions = validFactions
+                .InRandomOrder()
+                .Take(8)
+                .ToList();
             bool foundValidQuestTarget = false;
 
             foreach (Faction factionCandidate in shuffledFactions)
@@ -319,73 +322,97 @@ namespace SignalInterceptor
                 return false;
 
             const float minRouteDistance = 4f;
-            const float maxRouteDistance = 180f;
-            const float maxAverageDistanceFromPlayer = 350f;
+            const float maxRouteDistance = 420f;
+            const float maxAverageDistanceFromPlayer = 900f;
+
+            const int maxPairChecks = 600;
 
             List<ShuttleRoutePair> pairs = new List<ShuttleRoutePair>();
 
-            for (int i = 0; i < settlements.Count; i++)
+            for (int attempt = 0; attempt < maxPairChecks; attempt++)
             {
-                for (int j = i + 1; j < settlements.Count; j++)
-                {
-                    Settlement a = settlements[i];
-                    Settlement b = settlements[j];
+                Settlement a = settlements.RandomElementWithFallback(null);
+                Settlement b = settlements.RandomElementWithFallback(null);
 
-                    if (a == null || b == null)
-                        continue;
+                if (a == null || b == null || a == b)
+                    continue;
 
-                    PlanetTile aTile = a.Tile;
-                    PlanetTile bTile = b.Tile;
+                PlanetTile aTile = a.Tile;
+                PlanetTile bTile = b.Tile;
 
-                    if (!IsValidDistancePair(aTile, bTile))
-                        continue;
+                if (!IsValidDistancePair(aTile, bTile))
+                    continue;
 
-                    if (!IsValidDistancePair(playerTile, aTile))
-                        continue;
+                if (!IsValidDistancePair(playerTile, aTile))
+                    continue;
 
-                    if (!IsValidDistancePair(playerTile, bTile))
-                        continue;
+                if (!IsValidDistancePair(playerTile, bTile))
+                    continue;
 
-                    float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(aTile, bTile);
+                float routeDistance = Find.WorldGrid.ApproxDistanceInTiles(aTile, bTile);
 
-                    if (routeDistance < minRouteDistance || routeDistance > maxRouteDistance)
-                        continue;
+                if (routeDistance < minRouteDistance || routeDistance > maxRouteDistance)
+                    continue;
 
-                    float distAFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, aTile);
-                    float distBFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, bTile);
-                    float averageDistanceFromPlayer = (distAFromPlayer + distBFromPlayer) / 2f;
+                float distAFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, aTile);
+                float distBFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, bTile);
+                float averageDistanceFromPlayer = (distAFromPlayer + distBFromPlayer) / 2f;
 
-                    if (averageDistanceFromPlayer > maxAverageDistanceFromPlayer)
-                        continue;
+                if (averageDistanceFromPlayer > maxAverageDistanceFromPlayer)
+                    continue;
 
-                    /*
-                     * Чем ближе маршрут к игроку — тем выше шанс.
-                     * Но дальние маршруты не запрещены полностью, если они в пределах лимита.
-                     */
-                    float proximityWeight = Mathf.Lerp(
-                        2.5f,
-                        0.25f,
-                        Mathf.Clamp01(averageDistanceFromPlayer / maxAverageDistanceFromPlayer)
-                    );
+                float proximityWeight = Mathf.Lerp(
+                    2.5f,
+                    0.25f,
+                    Mathf.Clamp01(averageDistanceFromPlayer / maxAverageDistanceFromPlayer)
+                );
 
-                    /*
-                     * Слишком короткие маршруты менее интересны.
-                     */
-                    float routeLengthWeight = Mathf.Clamp(routeDistance / 20f, 0.5f, 2f);
+                float routeLengthWeight = Mathf.Clamp(routeDistance / 30f, 0.5f, 2.5f);
 
-                    float weight = proximityWeight * routeLengthWeight;
+                float weight = proximityWeight * routeLengthWeight;
 
-                    pairs.Add(new ShuttleRoutePair(a, b, weight));
-                }
+                pairs.Add(new ShuttleRoutePair(a, b, weight));
             }
 
-            if (pairs.Count == 0)
+            if (pairs.Count > 0)
+            {
+                ShuttleRoutePair selected = pairs.RandomElementByWeight(p => p.weight);
+
+                origin = selected.origin;
+                destination = selected.destination;
+
+                return true;
+            }
+
+            // Fallback: если строгий подбор пары не сработал, берём любые две базы этой фракции.
+            // ВАЖНО: нельзя использовать out-параметр origin внутри LINQ/lambda, поэтому используем local.
+            Settlement originLocal = settlements.RandomElementWithFallback(null);
+
+            if (originLocal == null)
                 return false;
 
-            ShuttleRoutePair selected = pairs.RandomElementByWeight(p => p.weight);
+            List<Settlement> destinationCandidates = new List<Settlement>();
 
-            origin = selected.origin;
-            destination = selected.destination;
+            for (int i = 0; i < settlements.Count; i++)
+            {
+                Settlement candidate = settlements[i];
+
+                if (candidate == null)
+                    continue;
+
+                if (candidate == originLocal)
+                    continue;
+
+                destinationCandidates.Add(candidate);
+            }
+
+            Settlement destinationLocal = destinationCandidates.RandomElementWithFallback(null);
+
+            if (destinationLocal == null)
+                return false;
+
+            origin = originLocal;
+            destination = destinationLocal;
 
             return true;
         }
@@ -537,12 +564,14 @@ namespace SignalInterceptor
             if (routeDistance <= 0f)
                 return false;
 
-            const int attempts = 3000;
-            const int minDist = 1;
-            const int maxDist = 350;
-            const float maxDeviation = 8f;
+            const int attempts = 700;
+            const int minDist = 4;
+            const int maxDist = 650;
+            const float strictMaxDeviation = 35f;
+            const float looseMaxDeviation = 90f;
 
-            List<PlanetTile> candidates = new List<PlanetTile>();
+            List<PlanetTile> strictCandidates = new List<PlanetTile>();
+            List<PlanetTile> looseCandidates = new List<PlanetTile>();
 
             for (int i = 0; i < attempts; i++)
             {
@@ -561,59 +590,133 @@ namespace SignalInterceptor
                 if (!IsValidDistancePair(tile, destinationTile))
                     continue;
 
+                if (!IsValidDistancePair(playerTile, tile))
+                    continue;
+
                 float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(originTile, tile);
                 float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destinationTile);
+                float distFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, tile);
 
                 if (distFromOrigin < 1f || distToDestination < 1f)
+                    continue;
+
+                if (distFromPlayer > maxDist)
                     continue;
 
                 float totalDistance = distFromOrigin + distToDestination;
                 float deviation = totalDistance - routeDistance;
 
-                if (deviation < 0f || deviation > maxDeviation)
+                if (deviation >= 0f && deviation <= strictMaxDeviation)
+                {
+                    strictCandidates.Add(tile);
                     continue;
+                }
 
-                candidates.Add(tile);
+                if (deviation >= -20f && deviation <= looseMaxDeviation)
+                {
+                    looseCandidates.Add(tile);
+                }
             }
 
-            if (candidates.Count == 0)
+            List<PlanetTile> candidates = strictCandidates.Count > 0
+                ? strictCandidates
+                : looseCandidates;
+
+            if (candidates.Count > 0)
             {
-                Log.Message("[Signal Interceptor] Shuttle route tile not found. " +
+                resultTile = candidates
+                    .OrderBy(tile =>
+                    {
+                        float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(originTile, tile);
+                        float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destinationTile);
+
+                        float totalDistance = distFromOrigin + distToDestination;
+                        float deviation = Mathf.Abs(totalDistance - routeDistance);
+                        float balance = Mathf.Abs(distFromOrigin - distToDestination);
+
+                        return deviation * 5f + balance;
+                    })
+                    .First();
+
+                Log.Message("[Signal Interceptor] Shuttle route tile selected. " +
                             "Faction: " + faction.Name +
                             " | Origin: " + originLabel +
                             " | Destination: " + destinationLabel +
                             " | Route distance: " + routeDistance +
-                            " | Shuttle VIP skipped.");
+                            " | Strict candidates: " + strictCandidates.Count +
+                            " | Loose candidates: " + looseCandidates.Count +
+                            " | Tile: " + resultTile);
 
-                resultTile = PlanetTile.Invalid;
-                return false;
+                return true;
             }
 
-            resultTile = candidates
-                .OrderBy(tile =>
-                {
-                    float distFromOrigin = Find.WorldGrid.ApproxDistanceInTiles(originTile, tile);
-                    float distToDestination = Find.WorldGrid.ApproxDistanceInTiles(tile, destinationTile);
+            // Последний fallback: если маршрутная логика не нашла точку,
+            // спавним обычный сайт в расширенном радиусе от игрока.
+            if (TryFindLooseSiteTile(playerMap, 12, 650, out resultTile))
+            {
+                Log.Warning("[Signal Interceptor] Shuttle route tile fallback used. " +
+                            "Faction: " + faction.Name +
+                            " | Origin: " + originLabel +
+                            " | Destination: " + destinationLabel +
+                            " | Route distance: " + routeDistance +
+                            " | Tile: " + resultTile);
 
-                    float totalDistance = distFromOrigin + distToDestination;
-                    float deviation = Mathf.Abs(totalDistance - routeDistance);
-                    float balance = Mathf.Abs(distFromOrigin - distToDestination);
+                return true;
+            }
 
-                    return deviation * 10f + balance;
-                })
-                .First();
-
-            Log.Message("[Signal Interceptor] Shuttle route tile selected. " +
+            Log.Message("[Signal Interceptor] Shuttle route tile not found even with fallback. " +
                         "Faction: " + faction.Name +
                         " | Origin: " + originLabel +
                         " | Destination: " + destinationLabel +
                         " | Route distance: " + routeDistance +
-                        " | Candidates: " + candidates.Count +
-                        " | Tile: " + resultTile);
+                        " | Shuttle VIP skipped.");
 
-            return true;
+            resultTile = PlanetTile.Invalid;
+            return false;
         }
 
+        private bool TryFindLooseSiteTile(Map map, int minDist, int maxDist, out PlanetTile resultTile)
+        {
+            resultTile = PlanetTile.Invalid;
+
+            if (map == null || !map.Tile.Valid)
+                return false;
+
+            PlanetTile playerTile = map.Tile;
+
+            const int attempts = 500;
+
+            for (int i = 0; i < attempts; i++)
+            {
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist, maxDist))
+                    continue;
+
+                if (!tile.Valid)
+                    continue;
+
+                if (tile.LayerDef != playerTile.LayerDef)
+                    continue;
+
+                if (!IsValidDistancePair(playerTile, tile))
+                    continue;
+
+                if (!IsValidSiteTile(tile))
+                    continue;
+
+                resultTile = tile;
+                return true;
+            }
+
+            // Совсем мягкий fallback: доверяем vanilla TileFinder.
+            if (TileFinder.TryFindNewSiteTile(out resultTile, minDist, maxDist))
+            {
+                if (resultTile.Valid && resultTile.LayerDef == playerTile.LayerDef)
+                    return true;
+            }
+
+            resultTile = PlanetTile.Invalid;
+            return false;
+        }
 
         private bool IsValidSiteTile(PlanetTile tile)
         {
@@ -671,11 +774,20 @@ namespace SignalInterceptor
                 case VIPSubtype.MechanitorSignalVIP:
                     return TryFindMechanitorSignalSiteTile(map, out tile, out signalTier);
 
+                case VIPSubtype.PsycasterVIP:
+                    signalTier = 0;
+                    return TryFindLooseSiteTile(map, 12, 160, out tile);
+
+                case VIPSubtype.PilgrimVIP:
+                    signalTier = 0;
+                    return TryFindLooseSiteTile(map, 12, 160, out tile);
+
                 default:
                     signalTier = 0;
-                    return TileFinder.TryFindNewSiteTile(out tile, minDist: 16, maxDist: 36);
+                    return TryFindLooseSiteTile(map, 12, 160, out tile);
             }
         }
+
 
         private bool TryFindDoppelgangerSiteTile(Map map, out PlanetTile resultTile, out int signalTier)
         {
@@ -813,16 +925,16 @@ namespace SignalInterceptor
 
             PlanetTile playerTile = map.Tile;
 
-            const int attempts = 3000;
-            const float minDistanceFromPlayer = 30f;
-            const float maxDistanceFromPlayer = 120f;
-            const float minSettlementDistance = 10f;
+            const int attempts = 800;
+            const float minDistanceFromPlayer = 20f;
+            const float maxDistanceFromPlayer = 180f;
+            const float minSettlementDistance = 6f;
 
             List<WeightedSiteTile> candidates = new List<WeightedSiteTile>();
 
             for (int i = 0; i < attempts; i++)
             {
-                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 30, maxDist: 120))
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 20, maxDist: 180))
                     continue;
 
                 if (!IsValidSiteTile(tile))
@@ -841,7 +953,7 @@ namespace SignalInterceptor
 
                 float nearestSpecialSiteDistance = DistanceToNearestSignalInterceptorSpecialSite(tile, playerTile);
 
-                if (nearestSpecialSiteDistance >= 0f && nearestSpecialSiteDistance < 30f)
+                if (nearestSpecialSiteDistance >= 0f && nearestSpecialSiteDistance < 15f)
                     continue;
 
                 float nearestSettlementDistance = DistanceToNearestSettlement(tile, playerTile);
@@ -853,7 +965,7 @@ namespace SignalInterceptor
 
                 if (distanceFromPlayer < 55f)
                     tier = 1;
-                else if (distanceFromPlayer < 90f)
+                else if (distanceFromPlayer < 100f)
                     tier = 2;
                 else
                     tier = 3;
@@ -885,23 +997,43 @@ namespace SignalInterceptor
                 candidates.Add(new WeightedSiteTile(tile, weight, tier));
             }
 
-            if (candidates.Count == 0)
+            if (candidates.Count > 0)
             {
-                Log.Message("[Signal Interceptor] Mechanitor signal site tile not found.");
-                return false;
+                WeightedSiteTile selected = candidates.RandomElementByWeight(c => c.weight);
+
+                resultTile = selected.tile;
+                signalTier = selected.signalTier;
+
+                Log.Message("[Signal Interceptor] Mechanitor signal site tile selected. " +
+                            "Tile=" + resultTile +
+                            " | Signal tier=" + signalTier +
+                            " | Candidates=" + candidates.Count);
+
+                return true;
             }
 
-            WeightedSiteTile selected = candidates.RandomElementByWeight(c => c.weight);
+            // Fallback: если тематический поиск не нашёл точку — не фейлим квест,
+            // а берём обычный валидный сайт в расширенном радиусе.
+            if (TryFindLooseSiteTile(map, 20, 220, out resultTile))
+            {
+                float distanceFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, resultTile);
 
-            resultTile = selected.tile;
-            signalTier = selected.signalTier;
+                if (distanceFromPlayer < 55f)
+                    signalTier = 1;
+                else if (distanceFromPlayer < 100f)
+                    signalTier = 2;
+                else
+                    signalTier = 3;
 
-            Log.Message("[Signal Interceptor] Mechanitor signal site tile selected. " +
-                        "Tile=" + resultTile +
-                        " | Signal tier=" + signalTier +
-                        " | Candidates=" + candidates.Count);
+                Log.Warning("[Signal Interceptor] Mechanitor signal fallback site tile selected. " +
+                            "Tile=" + resultTile +
+                            " | Signal tier=" + signalTier);
 
-            return true;
+                return true;
+            }
+
+            Log.Message("[Signal Interceptor] Mechanitor signal site tile not found.");
+            return false;
         }
 
         private float DistanceToNearestSettlement(PlanetTile tile, PlanetTile layerReferenceTile)
