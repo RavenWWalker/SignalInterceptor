@@ -151,7 +151,7 @@ namespace SignalInterceptor
 
         public bool HasDangerousBleeding()
         {
-            Pawn pawn = Pawn;
+            Pawn pawn = parent != null ? parent.pawn : null;
 
             if (pawn == null || pawn.Destroyed || pawn.Dead)
                 return false;

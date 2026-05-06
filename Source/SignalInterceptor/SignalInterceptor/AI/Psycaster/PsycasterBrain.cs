@@ -136,6 +136,10 @@ namespace SignalInterceptor.AI.Psycaster
 
             int now = Find.TickManager.TicksGame;
 
+            if (TryStopLeavingMapJob())
+                return;
+
+
             if (HomeAnchor.IsValid)
             {
                 float homeDist = caster.Position.DistanceTo(HomeAnchor);
@@ -280,6 +284,108 @@ namespace SignalInterceptor.AI.Psycaster
         // Выбор действия (action-select)
         // ============================================================
 
+        private bool TryStopLeavingMapJob()
+        {
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned || caster.Map == null)
+                return false;
+
+            Job curJob = caster.CurJob;
+
+            if (curJob == null || curJob.def == null)
+                return false;
+
+            string defName = curJob.def.defName;
+
+            bool leaving =
+                defName == "ExitMap" ||
+                defName == "ExitMapBest" ||
+                defName == "ExitMapNearDutyTarget" ||
+                defName == "GotoMapEdge" ||
+                defName.IndexOf("ExitMap", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                defName.IndexOf("LeaveMap", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (!leaving)
+                return false;
+
+            caster.jobs.EndCurrentJob(JobCondition.InterruptForced, true, true);
+
+            BattlefieldSnapshot snap = SnapshotBuilder.Build(this);
+            LastSnapshot = snap;
+
+            Pawn target = null;
+
+            if (snap != null && snap.topThreat != null)
+                target = snap.topThreat.pawn;
+
+            if (target == null && caster.Map != null)
+            {
+                IReadOnlyList<Pawn> pawns = caster.Map.mapPawns.AllPawnsSpawned;
+
+                float bestDist = float.MaxValue;
+
+                for (int i = 0; i < pawns.Count; i++)
+                {
+                    Pawn p = pawns[i];
+
+                    if (p == null || p.Destroyed || p.Dead || p.Downed || !p.Spawned)
+                        continue;
+
+                    if (p.Faction != Faction.OfPlayer)
+                        continue;
+
+                    float d = caster.Position.DistanceTo(p.Position);
+
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        target = p;
+                    }
+                }
+            }
+
+            if (target != null)
+            {
+                gc.InterruptBadPsycasterCombatJob_Public(caster, target);
+                gc.TryForcePsycasterMeleeAttack_Public(caster, target);
+
+                StartKillContract(target, 600, "PreventExitMap");
+
+                nextActionSelectTick = Find.TickManager.TicksGame + 30;
+                nextStanceReevalTick = Find.TickManager.TicksGame + 30;
+
+                Log.Message("[Signal Interceptor] Psycaster tried to leave map; forced back into combat. "
+                            + "Pawn=" + caster.LabelShort
+                            + " | OldJob=" + defName
+                            + " | Target=" + target.LabelShort);
+
+                return true;
+            }
+
+            if (HomeAnchor.IsValid)
+            {
+                Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
+                goHome.locomotionUrgency = LocomotionUrgency.Sprint;
+                goHome.expiryInterval = Rand.RangeInclusive(120, 180);
+
+                caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
+
+                nextActionSelectTick = Find.TickManager.TicksGame + 60;
+
+                Log.Message("[Signal Interceptor] Psycaster tried to leave map; returning to anchor. "
+                            + "Pawn=" + caster.LabelShort
+                            + " | OldJob=" + defName
+                            + " | Anchor=" + HomeAnchor);
+
+                return true;
+            }
+
+            Log.Message("[Signal Interceptor] Psycaster tried to leave map; job cancelled. "
+                        + "Pawn=" + caster.LabelShort
+                        + " | OldJob=" + defName);
+
+            return true;
+        }
+
         public bool ShouldReservePsycastForEscape(string abilityDefName, BattlefieldSnapshot snap)
         {
             if (string.IsNullOrEmpty(abilityDefName) || snap == null)
@@ -344,7 +450,7 @@ namespace SignalInterceptor.AI.Psycaster
             Pawn target = null;
             float bestDist = float.MaxValue;
 
-            List<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
+            IReadOnlyList<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
 
             for (int i = 0; i < pawns.Count; i++)
             {
@@ -964,6 +1070,7 @@ namespace SignalInterceptor.AI.Psycaster
                     c => c.InBounds(map)
                          && c.Standable(map)
                          && c.GetFirstPawn(map) == null
+                         && c.DistanceToEdge(map) >= 8
                          && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
                     out cell))
                 {
