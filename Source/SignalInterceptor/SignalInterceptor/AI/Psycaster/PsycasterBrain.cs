@@ -288,7 +288,14 @@ namespace SignalInterceptor.AI.Psycaster
 
                 if (casted)
                 {
-                    nextActionSelectTick = Find.TickManager.TicksGame + 150;
+                    float d = caster.Position.DistanceTo(action.targetPawn.Position);
+
+                    // Если цель рядом или убегает после контроля — обновляем melee-задачу часто.
+                    // Если поставить 150 всегда, кастер может "забыть" бегущую цель на пару секунд.
+                    if (d <= 3.5f || WasPawnRecentlyMoved(action.targetPawn))
+                        nextActionSelectTick = Find.TickManager.TicksGame + 45;
+                    else
+                        nextActionSelectTick = Find.TickManager.TicksGame + 90;
 
                     Log.Message("[Signal Interceptor] Psycaster melee: " + action.targetPawn.LabelShort
                                 + " | score=" + action.score.ToString("F2")
@@ -354,13 +361,10 @@ namespace SignalInterceptor.AI.Psycaster
                         MarkPawnRecentlyMoved(action.targetPawn, 600);
                     }
 
-                    // Важно:
-                    // Stun тоже помечаем как "цель недавно контролилась".
-                    // Тогда следующий action-select после warmup не будет тупить/держать позицию,
-                    // а почти гарантированно выберет melee commit.
                     if (n == "Stun")
                     {
-                        MarkPawnRecentlyMoved(action.targetPawn, 240);
+                        // Stun — это тоже контроль-окно для melee-коммита.
+                        MarkPawnRecentlyMoved(action.targetPawn, 300);
                     }
                 }
 
@@ -372,14 +376,21 @@ namespace SignalInterceptor.AI.Psycaster
 
                 int extraDelay = 30;
 
-                // Если станим цель рядом с собой — хотим почти сразу после warmup перейти в melee.
+                // После Stun рядом с целью не ждём лишние секунды.
+                // Warmup уже учитывает время самого каста.
                 if (action.abilityDefName == "Stun" &&
                     action.targetPawn != null &&
                     action.targetPawn.Spawned &&
-                    action.targetPawn.Map == caster.Map &&
-                    caster.Position.DistanceTo(action.targetPawn.Position) <= 7f)
+                    action.targetPawn.Map == caster.Map)
                 {
-                    extraDelay = 10;
+                    float d = caster.Position.DistanceTo(action.targetPawn.Position);
+
+                    if (d <= 3.5f)
+                        extraDelay = 1;
+                    else if (d <= 8f)
+                        extraDelay = 5;
+                    else
+                        extraDelay = 10;
                 }
 
                 nextActionSelectTick = Find.TickManager.TicksGame + warmup + extraDelay;

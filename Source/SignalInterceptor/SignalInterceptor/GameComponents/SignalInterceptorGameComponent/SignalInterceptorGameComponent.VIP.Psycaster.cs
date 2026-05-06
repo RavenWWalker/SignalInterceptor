@@ -1659,81 +1659,65 @@ namespace SignalInterceptor
         private bool TryForcePsycasterMeleeAttack(Pawn psycaster, Pawn target)
         {
             if (psycaster == null || target == null)
-            {
                 return false;
-            }
 
             if (psycaster.Destroyed || psycaster.Dead || psycaster.Downed || !psycaster.Spawned)
-            {
                 return false;
-            }
 
             if (target.Destroyed || target.Dead || target.Downed || !target.Spawned)
-            {
                 return false;
-            }
 
             if (psycaster.Map == null || psycaster.Map != target.Map)
-            {
                 return false;
-            }
 
-            if (psycaster.Position.AdjacentTo8WayOrInside(target.Position))
-            {
-                if (psycaster.CurJob != null &&
-                    psycaster.CurJob.def == JobDefOf.AttackMelee &&
-                    psycaster.CurJob.targetA.Thing == target)
-                {
-                    return true;
-                }
-
-                Job attackJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
-                attackJob.expiryInterval = Rand.RangeInclusive(60, 90);
-                attackJob.checkOverrideOnExpire = true;
-
-                if (psycaster.CurJob == null || psycaster.CurJob.def != JobDefOf.AttackMelee)
-                {
-                    psycaster.jobs.EndCurrentJob(JobCondition.InterruptForced, true);
-                }
-
-                return psycaster.jobs.TryTakeOrderedJob(attackJob, JobTag.Misc);
-            }
-
-            IntVec3 moveCell;
-            if (!TryFindMeleeCellNearTarget(psycaster, target, out moveCell))
-            {
+            if (psycaster.jobs == null)
                 return false;
-            }
 
-            // ВАЖНО:
-            // если уже идёт примерно к правильной клетке — не перебиваем job.
+            Map map = psycaster.Map;
+
+            if (!psycaster.CanReach(target, PathEndMode.Touch, Danger.Deadly))
+                return false;
+
+            // Если уже выполняет правильный melee job по этой цели — не перебиваем.
+            // Это важно: постоянный EndCurrentJob/StartJob сбрасывает атаку и создаёт "тупняк".
             if (psycaster.CurJob != null &&
-                psycaster.CurJob.def == JobDefOf.Goto &&
-                psycaster.CurJob.targetA.IsValid)
+                psycaster.CurJob.def == JobDefOf.AttackMelee &&
+                psycaster.CurJob.targetA.Thing == target)
             {
-                IntVec3 currentDest = psycaster.CurJob.targetA.Cell;
-
-                if (currentDest.DistanceTo(target.Position) <= 2f)
-                {
-                    return true;
-                }
-
-                if (currentDest.DistanceTo(moveCell) <= 3f)
-                {
-                    return true;
-                }
+                return true;
             }
 
-            Job gotoJob = JobMaker.MakeJob(JobDefOf.Goto, moveCell);
-            gotoJob.expiryInterval = Rand.RangeInclusive(90, 150);
-            gotoJob.checkOverrideOnExpire = true;
-
-            if (psycaster.CurJob == null || psycaster.CurJob.def != JobDefOf.Goto)
+            // Если сейчас идёт к точке через Goto — это старое поведение.
+            // Оно плохо работает против бегущей цели: кастер может пройти мимо.
+            // Прерываем Goto и заменяем на AttackMelee по самой пешке.
+            if (psycaster.CurJob != null &&
+                psycaster.CurJob.def == JobDefOf.Goto)
             {
                 psycaster.jobs.EndCurrentJob(JobCondition.InterruptForced, true);
             }
 
-            return psycaster.jobs.TryTakeOrderedJob(gotoJob, JobTag.Misc);
+            // Не прерываем активный каст. Если пси-кастер сейчас в warmup,
+            // Brain позже повторно вызовет melee после завершения каста.
+            if (psycaster.stances != null && psycaster.stances.curStance != null)
+            {
+                string stanceName = psycaster.stances.curStance.GetType().Name;
+
+                if (stanceName == "PawnStance_Warmup")
+                    return true;
+            }
+
+            Job attackJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+            attackJob.expiryInterval = Rand.RangeInclusive(180, 240);
+            attackJob.checkOverrideOnExpire = true;
+            attackJob.playerForced = false;
+
+            if (psycaster.CurJob != null &&
+                psycaster.CurJob.def != JobDefOf.AttackMelee)
+            {
+                psycaster.jobs.EndCurrentJob(JobCondition.InterruptForced, true);
+            }
+
+            return psycaster.jobs.TryTakeOrderedJob(attackJob, JobTag.Misc);
         }
         private bool TryFindMeleeCellNearTarget(Pawn psycaster, Pawn target, out IntVec3 result)
         {

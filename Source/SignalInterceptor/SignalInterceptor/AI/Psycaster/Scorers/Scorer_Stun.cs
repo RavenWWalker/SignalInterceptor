@@ -62,9 +62,10 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.role == EnemyRole.Wimp)
                     continue;
 
-                // Если цель только что была Beckon/Skip'нута и ещё не рядом —
-                // не тратим Stun, пусть пси-кастер добегает/режет.
-                if (singleEnemy && brain.WasPawnRecentlyMoved(e.pawn) && e.distanceToCaster > 4.5f)
+                // Если цель только что была Beckon/Skip'нута и ещё далеко —
+                // сначала пусть кастер добежит. Иначе будет цикл:
+                // Beckon -> Stun на дистанции -> снова добегает, но стан уже спал.
+                if (singleEnemy && brain.WasPawnRecentlyMoved(e.pawn) && e.distanceToCaster > 6f)
                     continue;
 
                 float score = e.threatScore / 10f;
@@ -75,40 +76,45 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.hpFraction < 0.4f)
                     score *= 1.2f;
 
-                // ============================================================
-                // Главное новое правило:
-                // 1v1 + цель в ближнем бою/почти в ближнем бою.
-                // Стан должен иногда перебивать обычный melee, чтобы дестабилизировать
-                // стрелка/ближника прямо во время схватки.
-                // ============================================================
-
+                // 1v1: стан в ближнем бою — полезен, но не должен превращаться
+                // в бесконечный stun-spam вместо ударов.
                 if (singleEnemy && e.distanceToCaster <= 1.6f)
                 {
-                    score = 36f;
+                    score = 18f;
 
                     if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
-                        score += 8f;
-
-                    if (e.hpFraction < 0.5f)
-                        score += 4f;
-                }
-                else if (singleEnemy && e.distanceToCaster <= 3.5f)
-                {
-                    score = 24f;
-
-                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
-                        score += 6f;
+                        score += 5f;
 
                     if (e.hpFraction < 0.5f)
                         score += 3f;
+
+                    // Если цель недавно уже контролилась, чуть режем повторный стан.
+                    if (brain.WasPawnRecentlyMoved(e.pawn))
+                        score *= 0.65f;
+                }
+                else if (singleEnemy && e.distanceToCaster <= 3.5f)
+                {
+                    score = 14f;
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        score += 4f;
+
+                    if (e.hpFraction < 0.5f)
+                        score += 2f;
+
+                    if (brain.WasPawnRecentlyMoved(e.pawn))
+                        score *= 0.65f;
                 }
                 else if (singleEnemy && e.IsRanged && e.distanceToCaster <= 7f)
                 {
-                    // Стрелок пытается отбежать — станим, чтобы сразу после этого догнать.
-                    score = 14f + (e.threatScore / 20f);
+                    // Стрелок отступает. Можно станить, но score ниже melee,
+                    // чтобы melee pursuit не перебивался постоянно.
+                    score = 7f + (e.threatScore / 25f);
+
+                    if (brain.WasPawnRecentlyMoved(e.pawn))
+                        score *= 0.5f;
                 }
 
-                // В Survive стан не должен перебивать защитные способности.
                 if (brain.CurrentStance == PsycasterStance.Survive)
                     score *= 0.35f;
 
