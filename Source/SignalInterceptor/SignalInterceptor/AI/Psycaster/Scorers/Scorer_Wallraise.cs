@@ -29,6 +29,17 @@ namespace SignalInterceptor.AI.Psycaster
 
         protected override ScoredAction ScoreInternal(PsycasterBrain brain, BattlefieldSnapshot snap)
         {
+            // В дуэли Wallraise не должен перебивать добивание цели.
+            // Иначе получается: Skip/Beckon -> melee -> Wallraise -> цель снова уходит.
+            if (snap.enemies != null &&
+                snap.enemies.Count == 1 &&
+                brain.HasActiveKillContract &&
+                brain.CurrentStance != PsycasterStance.Survive &&
+                snap.casterHpFraction > 0.45f)
+            {
+                return ScoredAction.None;
+            }
+
             // Ищем самого толстого дальника в LOS — от него и ставим стену.
             EnemyAssessment best = null;
             int rangedInLOS = 0;

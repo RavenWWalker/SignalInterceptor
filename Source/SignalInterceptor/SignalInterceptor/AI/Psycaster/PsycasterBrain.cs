@@ -50,6 +50,12 @@ namespace SignalInterceptor.AI.Psycaster
         private int pendingMeleeTargetThingId = -1;
         private int pendingMeleeUntilTick = -1;
         private string pendingMeleeReason = null;
+        private int killContractTargetThingId = -1;
+        private int killContractUntilTick = -1;
+        private string killContractReason = null;
+        private float killContractLastDistance = 999f;
+        private int killContractLastCloseTick = -1;
+        private int killContractEscapeUntilTick = -1;
 
         private readonly List<IAbilityScorer> scorers = new List<IAbilityScorer>();
 
@@ -128,7 +134,12 @@ namespace SignalInterceptor.AI.Psycaster
             {
                 float homeDist = caster.Position.DistanceTo(HomeAnchor);
 
-                if (homeDist > MaxHomeDistance)
+                // ВАЖНО:
+                // если активен kill-contract, anchor не должен ломать добивание цели.
+                // Старое MaxHomeDistance=85 слишком часто рвало бой на 86-88 клетках.
+                float allowedHomeDistance = HasActiveKillContract ? 130f : MaxHomeDistance;
+
+                if (homeDist > allowedHomeDistance)
                 {
                     Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
                     goHome.locomotionUrgency = LocomotionUrgency.Sprint;
@@ -137,7 +148,9 @@ namespace SignalInterceptor.AI.Psycaster
                     nextActionSelectTick = Find.TickManager.TicksGame + 90;
 
                     Log.Message("[Signal Interceptor] Psycaster too far from anchor (d="
-                                + homeDist.ToString("F1") + "), returning home " + HomeAnchor);
+                                + homeDist.ToString("F1") + "), returning home " + HomeAnchor
+                                + " | allowed=" + allowedHomeDistance.ToString("F0")
+                                + " | contract=" + HasActiveKillContract);
 
                     return;
                 }
@@ -166,6 +179,7 @@ namespace SignalInterceptor.AI.Psycaster
 
             BattlefieldSnapshot snap = SnapshotBuilder.Build(this);
             LastSnapshot = snap;
+            UpdateKillContractTelemetry(snap);
 
             if (!snap.HasEnemies)
             {
@@ -173,13 +187,17 @@ namespace SignalInterceptor.AI.Psycaster
                 pendingMeleeUntilTick = -1;
                 pendingMeleeReason = null;
 
+                ClearKillContract("no enemies");
+
                 gc.TryAttackPlayerShuttleOrBuilding_Public(caster, caster.Map);
                 return;
             }
 
-            // Самый важный блок:
-            // pending melee после Stun/Skip/Beckon исполняется ДО stance/action логики.
-            // Это убирает тупой провис после Stun.
+            // Emergency escape имеет приоритет над pending-melee.
+            // Если он реально почти умер — пусть оторвётся, а не самоубивается в дуэли.
+            if (IsCasterFreeToAct() && TryEmergencyRetreat(snap))
+                return;
+
             if (TryRunPendingMelee(snap))
                 return;
 
@@ -272,6 +290,7 @@ namespace SignalInterceptor.AI.Psycaster
                 return true;
 
             Pawn target = null;
+            EnemyAssessment targetAssessment = null;
 
             for (int i = 0; i < snap.enemies.Count; i++)
             {
@@ -283,6 +302,7 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.pawn.thingIDNumber == pendingMeleeTargetThingId)
                 {
                     target = e.pawn;
+                    targetAssessment = e;
                     break;
                 }
             }
@@ -300,6 +320,27 @@ namespace SignalInterceptor.AI.Psycaster
                 return false;
             }
 
+            float d = targetAssessment != null
+                ? targetAssessment.distanceToCaster
+                : caster.Position.DistanceTo(target.Position);
+
+            // КЛЮЧЕВОЙ ФИКС ДЛЯ JUMP PACK:
+            // если цель была в melee contract и резко сбежала на 10+ клеток,
+            // не продолжаем тупо pending-melee пешком.
+            // Отпускаем управление в action selection, чтобы Skip/Beckon/Blind/Vertigo
+            // могли вернуть или подавить цель.
+            if (IsAntiKiteEscapeTarget(target) && d > 6f)
+            {
+                nextActionSelectTick = now;
+
+                Log.Message("[Signal Interceptor] Psycaster pending-melee yielded to anti-kite: "
+                            + target.LabelShort
+                            + " | reason=" + (pendingMeleeReason ?? "unknown")
+                            + " | d=" + d.ToString("F1"));
+
+                return false;
+            }
+
             gc.InterruptBadPsycasterCombatJob_Public(caster, target);
 
             bool started = gc.TryForcePsycasterMeleeAttack_Public(caster, target);
@@ -311,12 +352,11 @@ namespace SignalInterceptor.AI.Psycaster
                 Log.Message("[Signal Interceptor] Psycaster pending-melee: "
                             + target.LabelShort
                             + " | reason=" + (pendingMeleeReason ?? "unknown")
-                            + " | d=" + caster.Position.DistanceTo(target.Position).ToString("F1"));
+                            + " | d=" + d.ToString("F1"));
 
-                // Не очищаем pending сразу, если цель ещё не рядом.
-                // Пусть несколько быстрых тиков подряд удерживают AttackMelee,
-                // пока RimWorld job нормально зацепит движущуюся цель.
-                if (caster.Position.DistanceTo(target.Position) <= 1.8f)
+                // pending можно очистить, когда цель реально рядом.
+                // Но kill-contract остаётся отдельно и продолжает держать намерение убить.
+                if (d <= 1.8f)
                 {
                     pendingMeleeTargetThingId = -1;
                     pendingMeleeUntilTick = -1;
@@ -337,6 +377,310 @@ namespace SignalInterceptor.AI.Psycaster
             pendingMeleeTargetThingId = target.thingIDNumber;
             pendingMeleeUntilTick = Find.TickManager.TicksGame + Mathf.Max(60, durationTicks);
             pendingMeleeReason = reason;
+
+            StartKillContract(target, Mathf.Max(durationTicks, 420), reason);
+        }
+
+        private bool TryEmergencyRetreat(BattlefieldSnapshot snap)
+        {
+            if (snap == null || snap.caster == null || !snap.HasEnemies)
+                return false;
+
+            // В 1v1 не паникуем слишком рано. Иначе он будет ломать нормальную дуэль.
+            bool singleEnemy = snap.enemies != null && snap.enemies.Count == 1;
+
+            bool criticalHp = snap.casterHpFraction <= 0.30f;
+            bool lowHpUnderFire = snap.casterHpFraction <= 0.45f && snap.IsUnderRangedFire && !singleEnemy;
+            bool surrounded = snap.enemiesAdjacent != null && snap.enemiesAdjacent.Count >= 2;
+
+            if (!criticalHp && !lowHpUnderFire && !surrounded)
+                return false;
+
+            AbilityDef skipDef = GetAbilityDef("Skip");
+
+            if (skipDef == null)
+                return false;
+
+            object ability = GetPawnAbilityObject(skipDef);
+
+            if (ability == null)
+                return false;
+
+            if (IsAbilityOnCooldown(ability))
+                return false;
+
+            IntVec3 retreatCell;
+
+            if (!TryFindEmergencyRetreatCell(snap, out retreatCell))
+                return false;
+
+            bool casted = gc.TryCastPsyAbilityToDestination_Public(
+                caster,
+                "Skip",
+                caster,
+                retreatCell);
+
+            if (!casted)
+                return false;
+
+            pendingMeleeTargetThingId = -1;
+            pendingMeleeUntilTick = -1;
+            pendingMeleeReason = null;
+
+            ApplySoftCooldown("Skip");
+
+            nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupShort + 30;
+
+            Log.Message("[Signal Interceptor] Psycaster emergency-retreat Skip self to "
+                        + retreatCell
+                        + " | HP=" + snap.casterHpFraction.ToString("F2")
+                        + " | enemies=" + snap.enemies.Count
+                        + " | adjacent=" + (snap.enemiesAdjacent != null ? snap.enemiesAdjacent.Count : 0));
+
+            return true;
+        }
+
+        public bool HasActiveKillContract
+        {
+            get
+            {
+                return killContractTargetThingId >= 0 &&
+                       killContractUntilTick > Find.TickManager.TicksGame;
+            }
+        }
+
+        public bool IsKillContractTarget(Pawn p)
+        {
+            if (p == null)
+                return false;
+
+            if (!HasActiveKillContract)
+                return false;
+
+            return p.thingIDNumber == killContractTargetThingId;
+        }
+
+        public bool IsAntiKiteEscapeTarget(Pawn p)
+        {
+            if (p == null)
+                return false;
+
+            if (!IsKillContractTarget(p))
+                return false;
+
+            return killContractEscapeUntilTick > Find.TickManager.TicksGame;
+        }
+
+        public bool ShouldSuppressDistantStun(Pawn p, float distance, bool singleEnemy)
+        {
+            if (p == null)
+                return false;
+
+            // Главный фикс:
+            // если цель в kill-contract, Stun разрешён только как close pin.
+            // Иначе jump-pack цель провоцирует цикл:
+            // escaped -> far Stun -> chase -> stun expired -> escaped.
+            if (IsKillContractTarget(p) && distance > 3.5f)
+                return true;
+
+            // В дуэли против дальника Stun дальше 7 клеток почти всегда плохой:
+            // кастер не успевает реализовать стан в melee.
+            if (singleEnemy && distance > 7f)
+                return true;
+
+            return false;
+        }
+
+        private void StartKillContract(Pawn target, int durationTicks, string reason)
+        {
+            if (target == null)
+                return;
+
+            int now = Find.TickManager.TicksGame;
+
+            killContractTargetThingId = target.thingIDNumber;
+            killContractUntilTick = now + Mathf.Max(180, durationTicks);
+            killContractReason = reason;
+            killContractLastDistance = caster.Position.DistanceTo(target.Position);
+
+            if (killContractLastDistance <= 3.5f)
+                killContractLastCloseTick = now;
+
+            Log.Message("[Signal Interceptor] Psycaster kill-contract start: "
+                        + target.LabelShort
+                        + " | reason=" + (reason ?? "unknown")
+                        + " | d=" + killContractLastDistance.ToString("F1")
+                        + " | until=" + killContractUntilTick);
+        }
+
+        private void ClearKillContract(string reason)
+        {
+            if (killContractTargetThingId >= 0)
+            {
+                Log.Message("[Signal Interceptor] Psycaster kill-contract clear"
+                            + " | reason=" + (reason ?? "unknown")
+                            + " | oldTargetId=" + killContractTargetThingId);
+            }
+
+            killContractTargetThingId = -1;
+            killContractUntilTick = -1;
+            killContractReason = null;
+            killContractLastDistance = 999f;
+            killContractLastCloseTick = -1;
+            killContractEscapeUntilTick = -1;
+        }
+
+        private EnemyAssessment FindKillContractAssessment(BattlefieldSnapshot snap)
+        {
+            if (snap == null || snap.enemies == null)
+                return null;
+
+            if (!HasActiveKillContract)
+                return null;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.thingIDNumber == killContractTargetThingId)
+                    return e;
+            }
+
+            return null;
+        }
+
+        private void UpdateKillContractTelemetry(BattlefieldSnapshot snap)
+        {
+            int now = Find.TickManager.TicksGame;
+
+            if (!HasActiveKillContract)
+                return;
+
+            EnemyAssessment e = FindKillContractAssessment(snap);
+
+            if (e == null ||
+                e.pawn == null ||
+                e.pawn.Destroyed ||
+                e.pawn.Dead ||
+                e.pawn.Downed ||
+                !e.pawn.Spawned ||
+                e.pawn.Map != caster.Map)
+            {
+                ClearKillContract("target invalid/downed/dead");
+                return;
+            }
+
+            float d = e.distanceToCaster;
+
+            if (d <= 3.5f)
+                killContractLastCloseTick = now;
+
+            bool wasCloseRecently = killContractLastCloseTick > 0 &&
+                                    now - killContractLastCloseTick <= 240;
+
+            bool suddenDistanceBreak = killContractLastDistance < 5f && d >= 10f;
+
+            bool escapedFromMelee = wasCloseRecently && d >= 10f;
+
+            if (escapedFromMelee || suddenDistanceBreak)
+            {
+                killContractEscapeUntilTick = now + 180;
+
+                Log.Message("[Signal Interceptor] Psycaster anti-kite escape detected: "
+                            + e.pawn.LabelShort
+                            + " | d=" + d.ToString("F1")
+                            + " | lastD=" + killContractLastDistance.ToString("F1")
+                            + " | reason=" + (killContractReason ?? "unknown"));
+            }
+
+            killContractLastDistance = d;
+        }
+
+        private bool TryFindEmergencyRetreatCell(BattlefieldSnapshot snap, out IntVec3 result)
+        {
+            result = IntVec3.Invalid;
+
+            if (snap == null || caster == null || caster.Map == null || snap.topThreat == null || snap.topThreat.pawn == null)
+                return false;
+
+            Map map = caster.Map;
+            Pawn threat = snap.topThreat.pawn;
+
+            IntVec3 best = IntVec3.Invalid;
+            float bestScore = float.MinValue;
+
+            for (int i = 0; i < 80; i++)
+            {
+                IntVec3 cell;
+
+                if (!CellFinder.TryFindRandomCellNear(
+                    caster.Position,
+                    map,
+                    22,
+                    c => c.InBounds(map)
+                         && c.Standable(map)
+                         && c.GetFirstPawn(map) == null
+                         && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
+                    out cell))
+                {
+                    continue;
+                }
+
+                float distFromThreat = cell.DistanceTo(threat.Position);
+                float distFromCaster = cell.DistanceTo(caster.Position);
+
+                if (distFromCaster < 8f)
+                    continue;
+
+                if (distFromThreat < 12f)
+                    continue;
+
+                float score = 0f;
+
+                score += distFromThreat * 2.0f;
+                score += distFromCaster * 0.25f;
+
+                int visibleShooters = 0;
+
+                if (snap.rangedEnemies != null)
+                {
+                    for (int r = 0; r < snap.rangedEnemies.Count; r++)
+                    {
+                        EnemyAssessment e = snap.rangedEnemies[r];
+
+                        if (e == null || e.pawn == null || !e.pawn.Spawned || e.pawn.Map != map)
+                            continue;
+
+                        if (GenSight.LineOfSight(e.pawn.Position, cell, map))
+                            visibleShooters++;
+                    }
+                }
+
+                score -= visibleShooters * 18f;
+
+                if (HomeAnchor.IsValid)
+                {
+                    float homeDist = cell.DistanceTo(HomeAnchor);
+
+                    if (homeDist > MaxHomeDistance)
+                        score -= 100f;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = cell;
+                }
+            }
+
+            if (!best.IsValid)
+                return false;
+
+            result = best;
+            return true;
         }
 
         private void ActionSelectAndExecute(BattlefieldSnapshot snap)
@@ -387,6 +731,7 @@ namespace SignalInterceptor.AI.Psycaster
                 if (casted)
                 {
                     float d = caster.Position.DistanceTo(action.targetPawn.Position);
+                    StartKillContract(action.targetPawn, 420, "MeleeAttack");
 
                     if (d <= 3.5f || WasPawnRecentlyMoved(action.targetPawn))
                         nextActionSelectTick = Find.TickManager.TicksGame + 30;
@@ -451,21 +796,23 @@ namespace SignalInterceptor.AI.Psycaster
                 if (action.targetPawn != null)
                 {
                     string n = action.abilityDefName;
+                    float d = caster.Position.DistanceTo(action.targetPawn.Position);
 
                     if (n == "Beckon" || n == "Skip" || n == "ChaosSkip")
                     {
                         MarkPawnRecentlyMoved(action.targetPawn, 600);
-                        QueuePendingMelee(action.targetPawn, 360, n);
+                        QueuePendingMelee(action.targetPawn, 480, n);
+                        StartKillContract(action.targetPawn, 900, n);
                     }
 
                     if (n == "Stun")
                     {
-                        MarkPawnRecentlyMoved(action.targetPawn, 240);
+                        MarkPawnRecentlyMoved(action.targetPawn, 180);
 
-                        // Главный фикс:
-                        // после Stun не ждём обычный action-select.
-                        // Как только warmup закончится, Tick() мгновенно выдаст AttackMelee.
-                        QueuePendingMelee(action.targetPawn, 300, "Stun");
+                        // Stun теперь считается melee-pin, а не способом догонять цель с 15 клеток.
+                        // Контракт стартует/обновляется, но StunScorer ниже запретит дальний Stun.
+                        QueuePendingMelee(action.targetPawn, 240, "Stun");
+                        StartKillContract(action.targetPawn, d <= 3.5f ? 600 : 300, "Stun");
                     }
                 }
 
@@ -479,8 +826,6 @@ namespace SignalInterceptor.AI.Psycaster
 
                 if (action.abilityDefName == "Stun")
                 {
-                    // Да, фактически убираем пост-задержку.
-                    // Warmup самого Stun уже учтён. После него pending-melee заберёт управление.
                     extraDelay = 0;
                 }
                 else if ((action.abilityDefName == "Beckon" || action.abilityDefName == "Skip") &&

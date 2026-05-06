@@ -36,22 +36,60 @@ namespace SignalInterceptor.AI.Psycaster
             EnemyAssessment best = null;
             float bestRaw = 0f;
 
+            bool singleEnemy = snap.enemies.Count == 1;
+
             for (int i = 0; i < snap.enemies.Count; i++)
             {
                 EnemyAssessment e = snap.enemies[i];
                 if (e == null || e.pawn == null) continue;
-                if (brain.WasPawnRecentlyMoved(e.pawn)) continue;
-                if (e.role != EnemyRole.Ranged && e.role != EnemyRole.Sniper) continue;
-                if (e.distanceToCaster < PsycasterTuning.SkipMinTargetDistance) continue;
-                if (e.distanceToCaster > PsycasterTuning.SkipRangeMax) continue;
 
-                // Чем выше threat и чем дальше — тем выгоднее тащить к себе.
-                float raw = (e.threatScore / 10f) + (e.distanceToCaster * 0.10f);
+                bool antiKiteEscape = brain.IsAntiKiteEscapeTarget(e.pawn);
 
-                // Толстый damage-dealer карты — приоритет.
-                // Считаем долю threat этой цели от суммарного threat всех врагов.
-                if (e.threatScore >= AverageEnemyThreat(snap) * 1.8f)
-                    raw *= 1.4f;
+                // Обычно не скипаем недавно перемещённую цель,
+                // НО если она jump-pack'ом/рывком сбежала из melee-contract,
+                // наоборот надо вернуть её обратно.
+                if (brain.WasPawnRecentlyMoved(e.pawn) && !antiKiteEscape)
+                    continue;
+
+                if (e.role != EnemyRole.Ranged && e.role != EnemyRole.Sniper && e.role != EnemyRole.Heavy)
+                    continue;
+
+                float minDistance = antiKiteEscape ? 6f : PsycasterTuning.SkipMinTargetDistance;
+
+                if (singleEnemy && e.IsRanged)
+                    minDistance = antiKiteEscape ? 5f : 8f;
+
+                if (e.distanceToCaster < minDistance)
+                    continue;
+
+                if (e.distanceToCaster > PsycasterTuning.SkipRangeMax)
+                    continue;
+
+                float raw;
+
+                if (antiKiteEscape)
+                {
+                    // Антикайт должен уверенно перебивать Wallraise/Stun/обычный chase.
+                    raw = 42f + (e.threatScore / 8f) + (e.distanceToCaster * 0.35f);
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        raw *= 1.25f;
+                }
+                else
+                {
+                    raw = 8f + (e.threatScore / 18f) + (e.distanceToCaster * 0.22f);
+
+                    if (e.distanceToCaster >= 6f && e.distanceToCaster <= 14f)
+                        raw *= 1.35f;
+                    else if (e.distanceToCaster > 14f)
+                        raw *= 1.2f;
+
+                    if (e.threatScore >= AverageEnemyThreat(snap) * 1.8f)
+                        raw *= 1.25f;
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        raw *= 1.2f;
+                }
 
                 if (raw > bestRaw)
                 {
@@ -63,7 +101,6 @@ namespace SignalInterceptor.AI.Psycaster
             if (best == null)
                 return ScoredAction.None;
 
-            // Целевая клетка — соседняя с псикастером (мили-дистанция).
             IntVec3 dest = FindAdjacentDropCell(brain.Caster);
             if (!dest.IsValid)
                 return ScoredAction.None;
@@ -76,8 +113,10 @@ namespace SignalInterceptor.AI.Psycaster
             action.castWarmupTicks = PsycasterTuning.CastWarmupShort;
             action.score = bestRaw;
             action.debugReason = "Skip ranged " + best.pawn.LabelShort
-                                     + " d=" + best.distanceToCaster.ToString("F1")
-                                     + " -> " + dest;
+                                 + " d=" + best.distanceToCaster.ToString("F1")
+                                 + " -> " + dest
+                                 + " antiKite=" + brain.IsAntiKiteEscapeTarget(best.pawn);
+
             return action;
         }
 

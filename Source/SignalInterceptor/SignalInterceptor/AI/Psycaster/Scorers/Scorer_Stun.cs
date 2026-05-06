@@ -62,25 +62,25 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.role == EnemyRole.Wimp)
                     continue;
 
-                // Если цель только что была Beckon/Skip'нута и ещё далеко —
-                // сначала пусть кастер добежит. Иначе будет цикл:
-                // Beckon -> Stun на дистанции -> снова добегает, но стан уже спал.
-                if (singleEnemy && brain.WasPawnRecentlyMoved(e.pawn) && e.distanceToCaster > 6f)
+                // ГЛАВНЫЙ ФИКС:
+                // Stun запрещён во время погони / kill-contract, если цель не близко.
+                // Особенно важно против jump pack: не даём циклу
+                // escape -> Stun at 13 -> chase -> stun expired.
+                if (brain.ShouldSuppressDistantStun(e.pawn, e.distanceToCaster, singleEnemy))
                     continue;
 
-                float score = e.threatScore / 10f;
+                float score = e.threatScore / 12f;
 
                 if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
-                    score *= 1.5f;
+                    score *= 1.35f;
 
                 if (e.hpFraction < 0.4f)
-                    score *= 1.2f;
+                    score *= 1.15f;
 
-                // 1v1: стан в ближнем бою — полезен, но не должен превращаться
-                // в бесконечный stun-spam вместо ударов.
-                if (singleEnemy && e.distanceToCaster <= 1.6f)
+                // Близкий Stun — это pin под удар.
+                if (e.distanceToCaster <= 1.6f)
                 {
-                    score = 18f;
+                    score = 20f + (e.threatScore / 8f);
 
                     if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
                         score += 5f;
@@ -88,13 +88,12 @@ namespace SignalInterceptor.AI.Psycaster
                     if (e.hpFraction < 0.5f)
                         score += 3f;
 
-                    // Если цель недавно уже контролилась, чуть режем повторный стан.
-                    if (brain.WasPawnRecentlyMoved(e.pawn))
-                        score *= 0.65f;
+                    if (brain.IsKillContractTarget(e.pawn))
+                        score *= 1.25f;
                 }
-                else if (singleEnemy && e.distanceToCaster <= 3.5f)
+                else if (e.distanceToCaster <= 3.5f)
                 {
-                    score = 14f;
+                    score = 14f + (e.threatScore / 10f);
 
                     if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
                         score += 4f;
@@ -102,16 +101,16 @@ namespace SignalInterceptor.AI.Psycaster
                     if (e.hpFraction < 0.5f)
                         score += 2f;
 
-                    if (brain.WasPawnRecentlyMoved(e.pawn))
-                        score *= 0.65f;
+                    if (brain.IsKillContractTarget(e.pawn))
+                        score *= 1.15f;
                 }
                 else if (singleEnemy && e.IsRanged && e.distanceToCaster <= 7f)
                 {
-                    // Стрелок отступает. Можно станить, но score ниже melee,
-                    // чтобы melee pursuit не перебивался постоянно.
-                    score = 7f + (e.threatScore / 25f);
+                    // Только короткий emergency pin.
+                    // Не должен перебивать Skip/Beckon/преследование.
+                    score = 3.5f + (e.threatScore / 40f);
 
-                    if (brain.WasPawnRecentlyMoved(e.pawn))
+                    if (brain.IsKillContractTarget(e.pawn))
                         score *= 0.5f;
                 }
 
@@ -137,7 +136,9 @@ namespace SignalInterceptor.AI.Psycaster
             action.debugReason = "Stun on " + best.pawn.LabelShort
                                  + " (role=" + best.role
                                  + ", threat=" + best.threatScore.ToString("F1")
-                                 + ", d=" + best.distanceToCaster.ToString("F1") + ")";
+                                 + ", d=" + best.distanceToCaster.ToString("F1")
+                                 + ", contract=" + brain.IsKillContractTarget(best.pawn)
+                                 + ")";
 
             return action;
         }

@@ -49,13 +49,17 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.isStunned || e.isMindControlled)
                     continue;
 
-                if (brain.WasPawnRecentlyMoved(e.pawn))
+                bool antiKiteEscape = brain.IsAntiKiteEscapeTarget(e.pawn);
+
+                // Обычно не дёргаем недавно перемещённую цель.
+                // Но если она сбежала из melee-contract — Beckon становится fallback после Skip.
+                if (brain.WasPawnRecentlyMoved(e.pawn) && !antiKiteEscape)
                     continue;
 
-                // КЛЮЧЕВАЯ ПРАВКА:
-                // Beckon не должен спамиться по цели, которая уже близко.
-                // Если цель в 14-16 клетках — её надо либо давить melee, либо контролить точечно.
                 float minUsefulDistance = brain.CurrentStance == PsycasterStance.Hunt ? 12f : 18f;
+
+                if (antiKiteEscape)
+                    minUsefulDistance = 7f;
 
                 if (e.distanceToCaster < minUsefulDistance)
                     continue;
@@ -63,24 +67,37 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.distanceToCaster > PsycasterTuning.BeckonMaxDistance)
                     continue;
 
-                // Beckon особенно полезен, когда дальник держит LOS и может стрелять.
-                float raw = 0f;
+                float raw;
 
-                raw += e.threatScore / 12f;
-                raw += e.distanceToCaster * 0.045f;
+                if (antiKiteEscape)
+                {
+                    raw = 28f + (e.threatScore / 10f) + (e.distanceToCaster * 0.22f);
 
-                if (e.hasLineOfSight)
-                    raw *= 1.25f;
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        raw *= 1.25f;
 
-                if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
-                    raw *= 1.35f;
+                    if (e.hasLineOfSight)
+                        raw *= 1.15f;
+                }
+                else
+                {
+                    raw = 0f;
 
-                if (snap.enemies.Count == 1)
-                    raw *= 1.25f;
+                    raw += e.threatScore / 12f;
+                    raw += e.distanceToCaster * 0.045f;
 
-                // Если он уже прямо на идеальной kite-дистанции, не надо бесконечно его дёргать.
-                if (e.distanceToCaster <= PsycasterTuning.KiteIdealDistance)
-                    raw *= 0.65f;
+                    if (e.hasLineOfSight)
+                        raw *= 1.25f;
+
+                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
+                        raw *= 1.35f;
+
+                    if (snap.enemies.Count == 1)
+                        raw *= 1.25f;
+
+                    if (e.distanceToCaster <= PsycasterTuning.KiteIdealDistance)
+                        raw *= 0.65f;
+                }
 
                 if (raw > bestRaw)
                 {
@@ -100,7 +117,9 @@ namespace SignalInterceptor.AI.Psycaster
             action.score = bestRaw;
             action.debugReason = "Beckon " + best.pawn.LabelShort
                                  + " (role=" + best.role
-                                 + ", d=" + best.distanceToCaster.ToString("F1") + ")";
+                                 + ", d=" + best.distanceToCaster.ToString("F1")
+                                 + ", antiKite=" + brain.IsAntiKiteEscapeTarget(best.pawn)
+                                 + ")";
 
             return action;
         }
