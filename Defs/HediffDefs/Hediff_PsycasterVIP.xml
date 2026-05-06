@@ -14,10 +14,10 @@
     <scenarioCanAdd>false</scenarioCanAdd>
     <comps>
       <li Class="SignalInterceptor.HediffCompProperties_PsycasterRestoringMechanisms">
-        <noDamageDelayTicks>900</noDamageDelayTicks>
+        <noDamageDelayTicks>600</noDamageDelayTicks>
         <intervalTicks>60</intervalTicks>
-        <healAmount>0.55</healAmount>
-        <bleedingHealMultiplier>1.35</bleedingHealMultiplier>
+        <healAmount>0.70</healAmount>
+        <bleedingHealMultiplier>1.45</bleedingHealMultiplier>
         <bloodLossReduction>0.012</bloodLossReduction>
         <onlyWhenNotRecentlyDamaged>true</onlyWhenNotRecentlyDamaged>
       </li>
@@ -37,9 +37,9 @@
     <scenarioCanAdd>false</scenarioCanAdd>
     <comps>
       <li Class="SignalInterceptor.HediffCompProperties_PsycasterEntropyStabilizer">
-        <noDamageDelayTicks>900</noDamageDelayTicks>
+        <noDamageDelayTicks>600</noDamageDelayTicks>
         <intervalTicks>60</intervalTicks>
-        <entropyReductionPerInterval>0.045</entropyReductionPerInterval>
+        <entropyReductionPerInterval>0.65</entropyReductionPerInterval>
       </li>
     </comps>
   </HediffDef>

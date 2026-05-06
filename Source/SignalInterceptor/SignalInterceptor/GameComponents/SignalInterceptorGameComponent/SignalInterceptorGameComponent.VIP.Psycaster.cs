@@ -221,10 +221,10 @@ namespace SignalInterceptor
 
             string[] possibleDefs =
             {
-        "StoneskinGland",
-        "StoneSkinGland",
-        "ArmorSkinGland_Stone"
-    };
+                "StoneskinGland",
+                "StoneSkinGland",
+                "ArmorSkinGland_Stone"
+            };
 
             for (int i = 0; i < possibleDefs.Length; i++)
             {
@@ -236,16 +236,14 @@ namespace SignalInterceptor
                 if (pawn.health.hediffSet.HasHediff(def))
                     return;
 
-                BodyPartRecord part = FindBestBodyPartForHediff(pawn, def);
+                BodyPartRecord part = FindTorsoBodyPart(pawn);
 
-                if (part == null && pawn.RaceProps != null && pawn.RaceProps.body != null)
-                {
-                    part = pawn.RaceProps.body.corePart;
-                }
+                if (part == null)
+                    part = pawn.RaceProps?.body?.corePart;
 
                 if (part == null)
                 {
-                    Log.Warning("[Signal Interceptor] Could not find body part for stoneskin gland. Pawn="
+                    Log.Warning("[Signal Interceptor] Could not find torso/core body part for stoneskin gland. Pawn="
                                 + pawn.LabelShort
                                 + " | Hediff="
                                 + def.defName);
@@ -279,6 +277,29 @@ namespace SignalInterceptor
             }
 
             Log.Warning("[Signal Interceptor] Stoneskin gland HediffDef not found for Psycaster VIP.");
+        }
+
+        private BodyPartRecord FindTorsoBodyPart(Pawn pawn)
+        {
+            if (pawn == null || pawn.RaceProps == null || pawn.RaceProps.body == null)
+                return null;
+
+            List<BodyPartRecord> parts = pawn.RaceProps.body.AllParts;
+
+            BodyPartRecord torso = parts.FirstOrDefault(p =>
+                p != null &&
+                p.def != null &&
+                p.def.defName == "Torso");
+
+            if (torso != null)
+                return torso;
+
+            torso = parts.FirstOrDefault(p =>
+                p != null &&
+                p.Label != null &&
+                p.Label.ToLowerInvariant().Contains("torso"));
+
+            return torso;
         }
 
         private void TryAddPsycasterVIPHediff(Pawn pawn, string defName)

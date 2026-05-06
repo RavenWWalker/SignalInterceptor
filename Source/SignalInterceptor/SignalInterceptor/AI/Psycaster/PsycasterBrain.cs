@@ -61,6 +61,7 @@ namespace SignalInterceptor.AI.Psycaster
         private int recoveryStartedTick = -1;
         private int nextRecoveryThinkTick = -1;
         private int nextEmergencyRetreatTick = -1;
+        private int nextDownedExecutionScanTick = -1;
 
         private readonly List<IAbilityScorer> scorers = new List<IAbilityScorer>();
 
@@ -195,7 +196,10 @@ namespace SignalInterceptor.AI.Psycaster
                 pendingMeleeUntilTick = -1;
                 pendingMeleeReason = null;
 
-                ClearKillContract("no enemies");
+                ClearKillContract("no standing enemies");
+
+                if (TryExecuteDownedPlayerPawn())
+                    return;
 
                 gc.TryAttackPlayerShuttleOrBuilding_Public(caster, caster.Map);
                 return;
@@ -275,6 +279,80 @@ namespace SignalInterceptor.AI.Psycaster
         // ============================================================
         // Выбор действия (action-select)
         // ============================================================
+
+        private bool TryExecuteDownedPlayerPawn()
+        {
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned || caster.Map == null)
+                return false;
+
+            if (!IsCasterFreeToAct())
+                return true;
+
+            int now = Find.TickManager.TicksGame;
+
+            if (now < nextDownedExecutionScanTick)
+                return true;
+
+            nextDownedExecutionScanTick = now + Rand.RangeInclusive(60, 90);
+
+            Map map = caster.Map;
+
+            Pawn target = null;
+            float bestDist = float.MaxValue;
+
+            List<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
+
+            for (int i = 0; i < pawns.Count; i++)
+            {
+                Pawn p = pawns[i];
+
+                if (p == null || p.Destroyed || p.Dead || !p.Spawned || p.Map != map)
+                    continue;
+
+                if (p.Faction != Faction.OfPlayer)
+                    continue;
+
+                if (!p.Downed)
+                    continue;
+
+                if (p.IsPrisoner)
+                    continue;
+
+                float d = caster.Position.DistanceTo(p.Position);
+
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    target = p;
+                }
+            }
+
+            if (target == null)
+                return false;
+
+            Job curJob = caster.CurJob;
+
+            if (curJob != null &&
+                curJob.def == JobDefOf.AttackMelee &&
+                curJob.targetA.Thing == target)
+            {
+                return true;
+            }
+
+            Job job = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+            job.expiryInterval = Rand.RangeInclusive(240, 360);
+            job.checkOverrideOnExpire = true;
+            job.playerForced = true;
+
+            caster.jobs.StartJob(job, JobCondition.InterruptForced);
+
+            Log.Message("[Signal Interceptor] Psycaster executing downed pawn: "
+                        + target.LabelShort
+                        + " | d=" + bestDist.ToString("F1"));
+
+            return true;
+        }
+
 
         private bool TryRunRecoveryLogic(BattlefieldSnapshot snap)
         {
@@ -417,10 +495,10 @@ namespace SignalInterceptor.AI.Psycaster
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
-            if (hp <= 0.35f)
+            if (hp <= 0.45f)
                 return true;
 
-            if (hp <= 0.45f && HasDangerousBleeding())
+            if (hp <= 0.58f && HasDangerousBleeding())
                 return true;
 
             return false;
@@ -433,7 +511,7 @@ namespace SignalInterceptor.AI.Psycaster
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
-            if (hp < 0.58f)
+            if (hp < 0.68f)
                 return false;
 
             if (HasDangerousBleeding())
@@ -597,8 +675,8 @@ namespace SignalInterceptor.AI.Psycaster
 
             int adjacentCount = snap.enemiesAdjacent != null ? snap.enemiesAdjacent.Count : 0;
 
-            bool criticalHp = snap.casterHpFraction <= 0.30f;
-            bool lowHpUnderFire = snap.casterHpFraction <= 0.45f && snap.IsUnderRangedFire && !singleEnemy;
+            bool criticalHp = snap.casterHpFraction <= 0.40f;
+            bool lowHpUnderFire = snap.casterHpFraction <= 0.55f && snap.IsUnderRangedFire && !singleEnemy;
 
             bool surrounded =
                 adjacentCount >= 3 ||
