@@ -47,6 +47,9 @@ namespace SignalInterceptor.AI.Psycaster
         private readonly ReactiveTriggers triggers = new ReactiveTriggers();
         private readonly Dictionary<string, int> softCooldowns = new Dictionary<string, int>();
         private readonly Dictionary<int, int> recentlyMovedPawns = new Dictionary<int, int>();
+        private int pendingMeleeTargetThingId = -1;
+        private int pendingMeleeUntilTick = -1;
+        private string pendingMeleeReason = null;
 
         private readonly List<IAbilityScorer> scorers = new List<IAbilityScorer>();
 
@@ -115,19 +118,37 @@ namespace SignalInterceptor.AI.Psycaster
         {
             if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
                 return;
+
             if (caster.Map == null)
                 return;
 
             int now = Find.TickManager.TicksGame;
 
-            // NoFlee не трогаем, если caster занят кастом/атакой.
-            if (now % PsycasterTuning.NoFleeRefreshTicks == 0)
+            if (HomeAnchor.IsValid)
+            {
+                float homeDist = caster.Position.DistanceTo(HomeAnchor);
+
+                if (homeDist > MaxHomeDistance)
+                {
+                    Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
+                    goHome.locomotionUrgency = LocomotionUrgency.Sprint;
+                    caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
+
+                    nextActionSelectTick = Find.TickManager.TicksGame + 90;
+
+                    Log.Message("[Signal Interceptor] Psycaster too far from anchor (d="
+                                + homeDist.ToString("F1") + "), returning home " + HomeAnchor);
+
+                    return;
+                }
+            }
+
+            if (Find.TickManager.TicksGame % PsycasterTuning.NoFleeRefreshTicks == 0)
             {
                 if (IsCasterFreeToAct())
                     gc.ForcePsycasterNoFlee_Public(caster, caster.Map);
             }
 
-            // Превентивный Focus один раз на старте боя.
             if (!focusBuffApplied && now >= graceUntilTick)
             {
                 if (gc.TryCastSelfPsyAbility_Public(caster, "Focus"))
@@ -140,52 +161,40 @@ namespace SignalInterceptor.AI.Psycaster
                 focusBuffApplied = true;
             }
 
-            // Период «приходит в себя» после спавна / лоада.
             if (now < graceUntilTick)
                 return;
 
-            // Собираем снапшот ДО anchor-логики.
-            // Важно: anchor не должен перебивать активный бой.
             BattlefieldSnapshot snap = SnapshotBuilder.Build(this);
             LastSnapshot = snap;
 
             if (!snap.HasEnemies)
             {
-                // Anchor работает только когда врагов нет.
-                // Раньше он срабатывал во время погони и ломал бой 1v1.
-                if (HomeAnchor.IsValid)
-                {
-                    float homeDist = caster.Position.DistanceTo(HomeAnchor);
-                    if (homeDist > MaxHomeDistance)
-                    {
-                        Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
-                        goHome.locomotionUrgency = LocomotionUrgency.Sprint;
-                        caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
-                        nextActionSelectTick = now + 90;
+                pendingMeleeTargetThingId = -1;
+                pendingMeleeUntilTick = -1;
+                pendingMeleeReason = null;
 
-                        Log.Message("[Signal Interceptor] Psycaster has no enemies and is too far from anchor (d="
-                                    + homeDist.ToString("F1") + "), returning home " + HomeAnchor);
-                        return;
-                    }
-                }
-
-                // Врагов нет — попробуем сломать игроку шаттл/здание.
                 gc.TryAttackPlayerShuttleOrBuilding_Public(caster, caster.Map);
                 return;
             }
 
-            // Реактивные триггеры — могут заставить переоценить ВСЁ прямо сейчас.
+            // Самый важный блок:
+            // pending melee после Stun/Skip/Beckon исполняется ДО stance/action логики.
+            // Это убирает тупой провис после Stun.
+            if (TryRunPendingMelee(snap))
+                return;
+
             bool interrupt = triggers.ShouldInterrupt(snap);
+
             if (interrupt)
             {
                 nextStanceReevalTick = now;
                 nextActionSelectTick = now;
             }
 
-            // Стратегический горизонт: переоценка стансы.
             if (now >= nextStanceReevalTick)
             {
                 PsycasterStance newStance = StanceSelector.Select(snap, currentStance);
+
                 if (newStance != currentStance)
                 {
                     Log.Message("[Signal Interceptor] Psycaster stance changed: "
@@ -196,15 +205,16 @@ namespace SignalInterceptor.AI.Psycaster
                 }
 
                 currentStance = newStance;
+
                 nextStanceReevalTick = now + Rand.RangeInclusive(
                     PsycasterTuning.StanceReevalMinTicks,
                     PsycasterTuning.StanceReevalMaxTicks);
             }
 
-            // Тактический горизонт: выбор действия.
             if (now >= nextActionSelectTick && IsCasterFreeToAct())
             {
                 ActionSelectAndExecute(snap);
+
                 nextActionSelectTick = now + Rand.RangeInclusive(
                     PsycasterTuning.ActionSelectMinTicks,
                     PsycasterTuning.ActionSelectMaxTicks);
@@ -239,6 +249,95 @@ namespace SignalInterceptor.AI.Psycaster
         // ============================================================
         // Выбор действия (action-select)
         // ============================================================
+
+        private bool TryRunPendingMelee(BattlefieldSnapshot snap)
+        {
+            if (pendingMeleeTargetThingId < 0)
+                return false;
+
+            int now = Find.TickManager.TicksGame;
+
+            if (pendingMeleeUntilTick > 0 && now > pendingMeleeUntilTick)
+            {
+                pendingMeleeTargetThingId = -1;
+                pendingMeleeUntilTick = -1;
+                pendingMeleeReason = null;
+                return false;
+            }
+
+            if (!IsCasterFreeToAct())
+                return true;
+
+            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
+                return true;
+
+            Pawn target = null;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.thingIDNumber == pendingMeleeTargetThingId)
+                {
+                    target = e.pawn;
+                    break;
+                }
+            }
+
+            if (target == null ||
+                target.Destroyed ||
+                target.Dead ||
+                target.Downed ||
+                !target.Spawned ||
+                target.Map != caster.Map)
+            {
+                pendingMeleeTargetThingId = -1;
+                pendingMeleeUntilTick = -1;
+                pendingMeleeReason = null;
+                return false;
+            }
+
+            gc.InterruptBadPsycasterCombatJob_Public(caster, target);
+
+            bool started = gc.TryForcePsycasterMeleeAttack_Public(caster, target);
+
+            if (started)
+            {
+                nextActionSelectTick = now + 30;
+
+                Log.Message("[Signal Interceptor] Psycaster pending-melee: "
+                            + target.LabelShort
+                            + " | reason=" + (pendingMeleeReason ?? "unknown")
+                            + " | d=" + caster.Position.DistanceTo(target.Position).ToString("F1"));
+
+                // Не очищаем pending сразу, если цель ещё не рядом.
+                // Пусть несколько быстрых тиков подряд удерживают AttackMelee,
+                // пока RimWorld job нормально зацепит движущуюся цель.
+                if (caster.Position.DistanceTo(target.Position) <= 1.8f)
+                {
+                    pendingMeleeTargetThingId = -1;
+                    pendingMeleeUntilTick = -1;
+                    pendingMeleeReason = null;
+                }
+
+                return true;
+            }
+
+            return true;
+        }
+
+        private void QueuePendingMelee(Pawn target, int durationTicks, string reason)
+        {
+            if (target == null)
+                return;
+
+            pendingMeleeTargetThingId = target.thingIDNumber;
+            pendingMeleeUntilTick = Find.TickManager.TicksGame + Mathf.Max(60, durationTicks);
+            pendingMeleeReason = reason;
+        }
 
         private void ActionSelectAndExecute(BattlefieldSnapshot snap)
         {
@@ -280,7 +379,6 @@ namespace SignalInterceptor.AI.Psycaster
 
             bool casted = false;
 
-            // === Псевдо-melee scorer ===
             if (action.abilityDefName == "MeleeAttack_Pseudo" && action.targetPawn != null)
             {
                 gc.InterruptBadPsycasterCombatJob_Public(caster, action.targetPawn);
@@ -290,12 +388,10 @@ namespace SignalInterceptor.AI.Psycaster
                 {
                     float d = caster.Position.DistanceTo(action.targetPawn.Position);
 
-                    // Если цель рядом или убегает после контроля — обновляем melee-задачу часто.
-                    // Если поставить 150 всегда, кастер может "забыть" бегущую цель на пару секунд.
                     if (d <= 3.5f || WasPawnRecentlyMoved(action.targetPawn))
-                        nextActionSelectTick = Find.TickManager.TicksGame + 45;
+                        nextActionSelectTick = Find.TickManager.TicksGame + 30;
                     else
-                        nextActionSelectTick = Find.TickManager.TicksGame + 90;
+                        nextActionSelectTick = Find.TickManager.TicksGame + 60;
 
                     Log.Message("[Signal Interceptor] Psycaster melee: " + action.targetPawn.LabelShort
                                 + " | score=" + action.score.ToString("F2")
@@ -359,12 +455,17 @@ namespace SignalInterceptor.AI.Psycaster
                     if (n == "Beckon" || n == "Skip" || n == "ChaosSkip")
                     {
                         MarkPawnRecentlyMoved(action.targetPawn, 600);
+                        QueuePendingMelee(action.targetPawn, 360, n);
                     }
 
                     if (n == "Stun")
                     {
-                        // Stun — это тоже контроль-окно для melee-коммита.
-                        MarkPawnRecentlyMoved(action.targetPawn, 300);
+                        MarkPawnRecentlyMoved(action.targetPawn, 240);
+
+                        // Главный фикс:
+                        // после Stun не ждём обычный action-select.
+                        // Как только warmup закончится, Tick() мгновенно выдаст AttackMelee.
+                        QueuePendingMelee(action.targetPawn, 300, "Stun");
                     }
                 }
 
@@ -376,21 +477,16 @@ namespace SignalInterceptor.AI.Psycaster
 
                 int extraDelay = 30;
 
-                // После Stun рядом с целью не ждём лишние секунды.
-                // Warmup уже учитывает время самого каста.
-                if (action.abilityDefName == "Stun" &&
-                    action.targetPawn != null &&
-                    action.targetPawn.Spawned &&
-                    action.targetPawn.Map == caster.Map)
+                if (action.abilityDefName == "Stun")
                 {
-                    float d = caster.Position.DistanceTo(action.targetPawn.Position);
-
-                    if (d <= 3.5f)
-                        extraDelay = 1;
-                    else if (d <= 8f)
-                        extraDelay = 5;
-                    else
-                        extraDelay = 10;
+                    // Да, фактически убираем пост-задержку.
+                    // Warmup самого Stun уже учтён. После него pending-melee заберёт управление.
+                    extraDelay = 0;
+                }
+                else if ((action.abilityDefName == "Beckon" || action.abilityDefName == "Skip") &&
+                         action.targetPawn != null)
+                {
+                    extraDelay = 5;
                 }
 
                 nextActionSelectTick = Find.TickManager.TicksGame + warmup + extraDelay;
@@ -416,14 +512,12 @@ namespace SignalInterceptor.AI.Psycaster
             bool targetRecentlyControlled = WasPawnRecentlyMoved(top.pawn);
             bool targetControlled = top.isStunned || top.isMindControlled || targetRecentlyControlled;
 
-            // 1v1:
-            // если цель рядом, оглушена, только что была притянута/скипнута/станнута —
-            // не держим дистанцию, не тупим, не idle-hold. Идём в melee.
-            if (singleEnemy &&
-                currentStance != PsycasterStance.Survive &&
-                top.distanceToCaster <= 18f &&
-                (targetControlled || top.distanceToCaster <= 8f))
+            // В 1v1 fallback никогда не должен отступать от уже выбранной цели.
+            // Если скореры ничего умного не нашли — бей/преследуй.
+            if (singleEnemy && currentStance != PsycasterStance.Survive && top.distanceToCaster <= 30f)
             {
+                QueuePendingMelee(top.pawn, 240, "Fallback1v1");
+
                 gc.InterruptBadPsycasterCombatJob_Public(caster, top.pawn);
                 gc.TryForcePsycasterMeleeAttack_Public(caster, top.pawn);
 
@@ -447,6 +541,8 @@ namespace SignalInterceptor.AI.Psycaster
 
             if (currentStance == PsycasterStance.Hunt && top.distanceToCaster <= 8f)
             {
+                QueuePendingMelee(top.pawn, 240, "HuntFallback");
+
                 gc.InterruptBadPsycasterCombatJob_Public(caster, top.pawn);
                 gc.TryForcePsycasterMeleeAttack_Public(caster, top.pawn);
                 return;
