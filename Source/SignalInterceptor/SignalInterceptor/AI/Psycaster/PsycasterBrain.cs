@@ -593,7 +593,6 @@ namespace SignalInterceptor.AI.Psycaster
             if (now < nextEmergencyRetreatTick)
                 return false;
 
-            // В 1v1 не паникуем слишком рано. Иначе он будет ломать нормальную дуэль.
             bool singleEnemy = snap.enemies != null && snap.enemies.Count == 1;
 
             int adjacentCount = snap.enemiesAdjacent != null ? snap.enemiesAdjacent.Count : 0;
@@ -604,9 +603,6 @@ namespace SignalInterceptor.AI.Psycaster
             bool surrounded =
                 adjacentCount >= 3 ||
                 (adjacentCount >= 2 && snap.casterHpFraction <= 0.60f);
-
-            if (!criticalHp && !lowHpUnderFire && !surrounded)
-                return false;
 
             if (!criticalHp && !lowHpUnderFire && !surrounded)
                 return false;
@@ -651,7 +647,7 @@ namespace SignalInterceptor.AI.Psycaster
                         + retreatCell
                         + " | HP=" + snap.casterHpFraction.ToString("F2")
                         + " | enemies=" + snap.enemies.Count
-                        + " | adjacent=" + (snap.enemiesAdjacent != null ? snap.enemiesAdjacent.Count : 0));
+                        + " | adjacent=" + adjacentCount);
 
             return true;
         }

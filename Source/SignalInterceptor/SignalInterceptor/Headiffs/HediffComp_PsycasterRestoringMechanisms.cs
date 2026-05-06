@@ -14,11 +14,6 @@ namespace SignalInterceptor
             get { return (HediffCompProperties_PsycasterRestoringMechanisms)props; }
         }
 
-        public Pawn Pawn
-        {
-            get { return parent != null ? parent.pawn : null; }
-        }
-
         public int LastDamageTakenTick
         {
             get { return lastDamageTakenTick; }

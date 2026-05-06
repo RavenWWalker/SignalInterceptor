@@ -159,6 +159,17 @@ namespace SignalInterceptor
                 skill.passion = passion;
         }
 
+        private void EnsurePsycasterVIPSurvivalKit(Pawn pawn)
+        {
+            if (pawn == null || pawn.Destroyed || pawn.Dead)
+                return;
+
+            EnsureRunnerTrait(pawn);
+            TryAddStoneskinGland(pawn);
+            TryAddPsycasterVIPHediff(pawn, "SI_RestoringMechanisms");
+            TryAddPsycasterVIPHediff(pawn, "SI_EntropyStabilizer");
+        }
+
         private void EnsureRunnerTrait(Pawn pawn)
         {
             if (pawn == null || pawn.story == null || pawn.story.traits == null)
@@ -203,45 +214,6 @@ namespace SignalInterceptor
             }
         }
 
-        private void EnsureRunnerTrait(Pawn pawn)
-        {
-            if (pawn == null || pawn.story == null || pawn.story.traits == null)
-                return;
-
-            TraitDef jogger = DefDatabase<TraitDef>.GetNamedSilentFail("SpeedOffset");
-
-            if (jogger == null)
-            {
-                Log.Warning("[Signal Interceptor] Jogger trait def not found for Psycaster VIP.");
-                return;
-            }
-
-            if (pawn.story.traits.HasTrait(jogger))
-                return;
-
-            TraitDef slowpoke = DefDatabase<TraitDef>.GetNamedSilentFail("Slowpoke");
-
-            if (slowpoke != null && pawn.story.traits.HasTrait(slowpoke))
-            {
-                Trait old = pawn.story.traits.GetTrait(slowpoke);
-
-                if (old != null)
-                    pawn.story.traits.RemoveTrait(old);
-            }
-
-            try
-            {
-                pawn.story.traits.GainTrait(new Trait(jogger, 0, true));
-            }
-            catch (Exception ex)
-            {
-                Log.Warning("[Signal Interceptor] Failed to add Jogger trait to Psycaster VIP. Pawn=" +
-                            pawn.LabelShort +
-                            " | Exception=" +
-                            ex);
-            }
-        }
-
         private void TryAddStoneskinGland(Pawn pawn)
         {
             if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
@@ -266,7 +238,7 @@ namespace SignalInterceptor
 
                 BodyPartRecord part = FindBestBodyPartForHediff(pawn, def);
 
-                if (part == null)
+                if (part == null && pawn.RaceProps != null && pawn.RaceProps.body != null)
                 {
                     part = pawn.RaceProps.body.corePart;
                 }
