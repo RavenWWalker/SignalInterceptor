@@ -459,6 +459,10 @@ namespace SignalInterceptor
             if (data.psycasterBrain == null)
             {
                 data.psycasterBrain = new SignalInterceptor.AI.Psycaster.PsycasterBrain(this, psycaster);
+                // Pack 5.2: якорь — точка спавна или signalCampCenter.
+                data.psycasterBrain.HomeAnchor = data.signalCampCenter.IsValid
+                    ? data.signalCampCenter
+                    : psycaster.Position;
             }
 
             data.psycasterBrain.Tick();
@@ -2199,41 +2203,39 @@ namespace SignalInterceptor
             if (caster == null || shooter == null || map == null)
                 return false;
 
-            IntVec3 direction = caster.Position - shooter.Position;
+            // Направление ОТ caster'а К shooter'у — стена должна быть в эту сторону.
+            IntVec3 toShooter = shooter.Position - caster.Position;
+            int dx = Math.Sign(toShooter.x);
+            int dz = Math.Sign(toShooter.z);
 
-            int dx = Math.Sign(direction.x);
-            int dz = Math.Sign(direction.z);
-
+            // Кандидаты: клетки В НАПРАВЛЕНИИ shooter'а на расстоянии 2-3 от caster'а.
+            // Это разорвёт LOS, но не запрёт самого caster'а.
             List<IntVec3> candidates = new List<IntVec3>
-    {
-        caster.Position + new IntVec3(dx, 0, dz),
-        caster.Position + new IntVec3(dx, 0, 0),
-        caster.Position + new IntVec3(0, 0, dz),
-        caster.Position + new IntVec3(-dx, 0, dz),
-        caster.Position + new IntVec3(dx, 0, -dz)
-    };
+            {
+                caster.Position + new IntVec3(dx * 2, 0, dz * 2),
+                caster.Position + new IntVec3(dx * 2, 0, dz),
+                caster.Position + new IntVec3(dx, 0, dz * 2),
+                caster.Position + new IntVec3(dx * 3, 0, dz * 3),
+                caster.Position + new IntVec3(dx * 2, 0, 0),
+                caster.Position + new IntVec3(0, 0, dz * 2),
+            };
 
             foreach (IntVec3 cell in candidates)
             {
-                if (!cell.IsValid || !cell.InBounds(map))
-                    continue;
+                if (!cell.IsValid || !cell.InBounds(map)) continue;
+                if (!cell.Standable(map)) continue;
+                if (cell.GetFirstPawn(map) != null) continue;
 
-                if (!cell.Standable(map))
-                    continue;
-
-                if (cell.GetFirstPawn(map) != null)
-                    continue;
+                // Проверка: эта клетка ДЕЙСТВИТЕЛЬНО блокирует LOS от shooter к caster?
+                // Если LOS уже разорван без неё — стена бесполезна.
+                if (!GenSight.LineOfSight(shooter.Position, caster.Position, map))
+                    return false;
 
                 result = cell;
                 return true;
             }
 
-            return CellFinder.TryFindRandomCellNear(
-                caster.Position,
-                map,
-                3,
-                c => c.Standable(map) && c.GetFirstPawn(map) == null,
-                out result);
+            return false;
         }
 
         private bool TrySkipEnemyToPsycaster(Pawn caster, Pawn enemy, Map map)
@@ -2334,6 +2336,8 @@ namespace SignalInterceptor
             destinationInfo
                 });
 
+                ApplyPsycasterCastPause(caster);
+
                 Log.Message("[Signal Interceptor] Psycaster VIP cast " +
                             abilityDef.defName +
                             " at cell " +
@@ -2408,6 +2412,8 @@ namespace SignalInterceptor
             targetInfo,
             destinationInfo
                 });
+
+                ApplyPsycasterCastPause(caster);
 
                 Log.Message("[Signal Interceptor] Psycaster VIP cast " +
                             abilityDef.defName +
@@ -2561,6 +2567,8 @@ namespace SignalInterceptor
             destinationInfo
                 });
 
+                ApplyPsycasterCastPause(caster);
+
                 Log.Message("[Signal Interceptor] Psycaster VIP cast " +
                             abilityDef.defName +
                             " on " +
@@ -2592,7 +2600,7 @@ namespace SignalInterceptor
             try
             {
                 Job job = JobMaker.MakeJob(JobDefOf.Wait_Combat);
-                job.expiryInterval = Rand.RangeInclusive(20, 40);
+                job.expiryInterval = Rand.RangeInclusive(40, 70);
                 job.checkOverrideOnExpire = true;
 
                 psycaster.jobs.TryTakeOrderedJob(job, JobTag.Misc);

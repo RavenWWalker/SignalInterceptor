@@ -40,6 +40,7 @@ namespace SignalInterceptor.AI.Psycaster
             {
                 EnemyAssessment e = snap.enemies[i];
                 if (e == null || e.pawn == null) continue;
+                if (brain.WasPawnRecentlyMoved(e.pawn)) continue;
                 if (e.distanceToCaster > PsycasterTuning.ChaosSkipMaxDistance) continue;
 
                 float raw = e.threatScore / 10f;

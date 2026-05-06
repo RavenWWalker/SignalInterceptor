@@ -46,6 +46,7 @@ namespace SignalInterceptor.AI.Psycaster
 
         private readonly ReactiveTriggers triggers = new ReactiveTriggers();
         private readonly Dictionary<string, int> softCooldowns = new Dictionary<string, int>();
+        private readonly Dictionary<int, int> recentlyMovedPawns = new Dictionary<int, int>();
 
         private readonly List<IAbilityScorer> scorers = new List<IAbilityScorer>();
 
@@ -119,8 +120,29 @@ namespace SignalInterceptor.AI.Psycaster
 
             int now = Find.TickManager.TicksGame;
 
-            // Не даём убегать с карты — оставляем старую логику.
-            gc.ForcePsycasterNoFlee_Public(caster, caster.Map);
+            // Pack 5.2: якорь — не уходим далеко от точки спавна.
+            if (HomeAnchor.IsValid)
+            {
+                float homeDist = caster.Position.DistanceTo(HomeAnchor);
+                if (homeDist > MaxHomeDistance)
+                {
+                    Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
+                    goHome.locomotionUrgency = LocomotionUrgency.Sprint;
+                    caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
+                    nextActionSelectTick = Find.TickManager.TicksGame + 90;
+                    Log.Message("[Signal Interceptor] Psycaster too far from anchor (d="
+                                + homeDist.ToString("F1") + "), returning home " + HomeAnchor);
+                    return;
+                }
+            }
+
+            // Pack 5.2: NoFlee не нужен, если caster занят кастом или melee.
+            // Дёргать его каждый тик создавало конфликт с warmup-stance.
+            if (Find.TickManager.TicksGame % PsycasterTuning.NoFleeRefreshTicks == 0)
+            {
+                if (IsCasterFreeToAct())
+                    gc.ForcePsycasterNoFlee_Public(caster, caster.Map);
+            }
 
             // Превентивный Focus один раз на старте боя — пока скорерры не подключены, делаем тут.
             if (!focusBuffApplied && now >= graceUntilTick)
@@ -298,6 +320,13 @@ namespace SignalInterceptor.AI.Psycaster
 
             if (casted)
             {
+                // Pack 5.2: антийо-йо — не двигаем повторно ту же пешку 10 секунд.
+                if (action.targetPawn != null)
+                {
+                    string n = action.abilityDefName;
+                    if (n == "Beckon" || n == "Skip" || n == "ChaosSkip")
+                        MarkPawnRecentlyMoved(action.targetPawn, 600);
+                }
                 // Поставить soft-cooldown по этой способности.
                 ApplySoftCooldown(action.abilityDefName);
 
@@ -431,6 +460,20 @@ namespace SignalInterceptor.AI.Psycaster
             return Find.TickManager.TicksGame < until;
         }
 
+        public void MarkPawnRecentlyMoved(Pawn p, int holdTicks)
+        {
+            if (p == null) return;
+            recentlyMovedPawns[p.thingIDNumber] = Find.TickManager.TicksGame + holdTicks;
+        }
+
+        public bool WasPawnRecentlyMoved(Pawn p)
+        {
+            if (p == null) return false;
+            int until;
+            if (!recentlyMovedPawns.TryGetValue(p.thingIDNumber, out until)) return false;
+            return Find.TickManager.TicksGame < until;
+        }
+
         public void ApplySoftCooldown(string abilityDefName)
         {
             if (string.IsNullOrEmpty(abilityDefName)) return;
@@ -527,5 +570,8 @@ namespace SignalInterceptor.AI.Psycaster
         {
             return gc.IsRangedCombatPawn_Public(p);
         }
+
+        public IntVec3 HomeAnchor = IntVec3.Invalid;
+        public const float MaxHomeDistance = 85f;
     }
 }

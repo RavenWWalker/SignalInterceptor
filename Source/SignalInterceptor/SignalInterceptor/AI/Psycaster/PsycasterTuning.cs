@@ -163,7 +163,7 @@
         public const float W_Kite_MassChaosSkip = 1.0f;
         public const float W_Kite_ManhunterPulse = 1.5f;
         public const float W_Kite_Smokepop = 2.0f;
-        public const float W_Kite_Wallraise = 0.8f;
+        public const float W_Kite_Wallraise = 0.4f;
         public const float W_Kite_Skipshield = 0.7f;
         public const float W_Kite_Invisibility = 1.0f;
         public const float W_Kite_Beckon = 0.6f;
@@ -214,7 +214,7 @@
         public const float W_Hunt_MassChaosSkip = 0.3f;
         public const float W_Hunt_ManhunterPulse = 0.5f;
         public const float W_Hunt_Smokepop = 0.0f;
-        public const float W_Hunt_Wallraise = 0.3f;
+        public const float W_Hunt_Wallraise = 0.0f;
         public const float W_Hunt_Skipshield = 0.4f;
         public const float W_Hunt_Invisibility = 3.0f;
         public const float W_Hunt_Beckon = 1.9f;

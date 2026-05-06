@@ -40,6 +40,7 @@ namespace SignalInterceptor.AI.Psycaster
             {
                 EnemyAssessment e = snap.enemies[i];
                 if (e == null || e.pawn == null) continue;
+                if (brain.WasPawnRecentlyMoved(e.pawn)) continue;
                 if (e.role != EnemyRole.Ranged && e.role != EnemyRole.Sniper) continue;
                 if (e.distanceToCaster < PsycasterTuning.BeckonMinDistance) continue;
                 if (e.distanceToCaster > PsycasterTuning.BeckonMaxDistance) continue;
