@@ -87,7 +87,7 @@ namespace SignalInterceptor
             string siteNameKey = siteNameKeys[Rand.Range(0, siteNameKeys.Length)];
             site.customLabel = siteNameKey.Translate();
 
-            int timeoutTicks = TimeoutDaysRange.RandomInRange * 60000;
+            int timeoutTicks = TimeoutDaysRange.RandomInRange * 10000;
             int goodwillBonus = GoodwillBonusRange.RandomInRange;
 
             string coloredFaction = FactionColored(faction);

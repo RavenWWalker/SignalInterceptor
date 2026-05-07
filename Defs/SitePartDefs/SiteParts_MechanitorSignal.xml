@@ -7,7 +7,7 @@
     <description>A moving source of unusual mechanoid interference.</description>
 
     <siteTexture>World/WorldObjects/Sites/Camp</siteTexture>
-    <expandingIconTexture>World/WorldObjects/Sites/Camp</expandingIconTexture>
+    <expandingIconTexture>World/WorldObjects/Sites/SI_Mechanitor</expandingIconTexture>
 
     <approachOrderString>Intercept the mechanitor signal</approachOrderString>
     <approachingReportString>Approaching the mechanitor signal</approachingReportString>

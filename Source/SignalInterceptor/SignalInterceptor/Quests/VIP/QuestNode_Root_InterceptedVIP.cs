@@ -20,7 +20,7 @@ namespace SignalInterceptor
 
     public class QuestNode_Root_InterceptedVIP : QuestNode
     {
-        private static readonly IntRange TimeoutDaysRange = new IntRange(1, 2);
+        private static readonly IntRange TimeoutDaysRange = new IntRange(1, 15);
 
         protected override bool TestRunInt(Slate slate)
         {
@@ -129,7 +129,7 @@ namespace SignalInterceptor
             }
 
              float threatPoints = GetThreatPoints(subtype, realFaction, siteSignalTier);
-             int timeoutTicks = TimeoutDaysRange.RandomInRange * 60000;
+             int timeoutTicks = TimeoutDaysRange.RandomInRange * 10000;
 
             SitePartDef vipPartDef = GetSitePartDef(subtype);
 
@@ -322,10 +322,10 @@ namespace SignalInterceptor
                 return false;
 
             const float minRouteDistance = 4f;
-            const float maxRouteDistance = 420f;
-            const float maxAverageDistanceFromPlayer = 900f;
+            const float maxRouteDistance = 260f;
+            const float maxAverageDistanceFromPlayer = 420f;
 
-            const int maxPairChecks = 600;
+            const int maxPairChecks = 500;
 
             List<ShuttleRoutePair> pairs = new List<ShuttleRoutePair>();
 
@@ -567,8 +567,8 @@ namespace SignalInterceptor
             const int attempts = 700;
             const int minDist = 6;
             const int maxDist = 280;
-            const float strictMaxDeviation = 28f;
-            const float looseMaxDeviation = 65f;
+            const float strictMaxDeviation = 18f;
+            const float looseMaxDeviation = 45f;
 
             List<PlanetTile> strictCandidates = new List<PlanetTile>();
             List<PlanetTile> looseCandidates = new List<PlanetTile>();
