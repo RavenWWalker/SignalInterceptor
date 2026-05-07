@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Defs>
-
   <SitePartDef>
-    <defName>SI_MechanitorSignalSite</defName>
+    <defName>SI_MechanitorVIPSite</defName>
     <label>mechanitor signal</label>
     <description>A moving source of unusual mechanoid interference.</description>
 
     <siteTexture>World/WorldObjects/Sites/Outpost</siteTexture>
     <expandingIconTexture>World/WorldObjects/Sites/SI_Mechanitor</expandingIconTexture>
 
-    <approachOrderString>Intercept the mechanitor signal</approachOrderString>
+    <approachOrderString>Chase the mechanitor signal</approachOrderString>
     <approachingReportString>Approaching the mechanitor signal</approachingReportString>
 
     <wantsThreatPoints>false</wantsThreatPoints>
     <defaultHidden>false</defaultHidden>
   </SitePartDef>
-
 </Defs>

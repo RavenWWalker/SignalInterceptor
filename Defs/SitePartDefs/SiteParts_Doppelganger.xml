@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
-<SitePartDef>
-    <defName>DoppelgangerCamp</defName>
-    <label>doppelganger camp</label>
-    <description>A camp of identical hostile combatants.</description>
-    <siteTexture>World/WorldObjects/Sites/Camp</siteTexture>
-    <expandingIconTexture>World/WorldObjects/Sites/SI_Doppelganger</expandingIconTexture>
-    <approachOrderString>Attack the doppelganger camp</approachOrderString>
-    <approachingReportString>Approaching the doppelganger camp</approachingReportString>
-    <wantsThreatPoints>false</wantsThreatPoints>
-    <defaultHidden>false</defaultHidden>
-</SitePartDef>
+    <SitePartDef>
+        <defName>SI_DoppelgangerVIPSite</defName>
+        <label>doppelganger camp</label>
+        <description>A camp of identical hostile combatants.</description>
+
+        <siteTexture>World/WorldObjects/Sites/Camp</siteTexture>
+        <expandingIconTexture>World/WorldObjects/Sites/SI_Doppelganger</expandingIconTexture>
+
+        <approachOrderString>Attack the doppelganger camp</approachOrderString>
+        <approachingReportString>Approaching the doppelganger camp</approachingReportString>
+
+        <wantsThreatPoints>false</wantsThreatPoints>
+        <defaultHidden>false</defaultHidden>
+    </SitePartDef>
 </Defs>

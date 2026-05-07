@@ -1200,8 +1200,8 @@ namespace SignalInterceptor
                 return false;
 
             return site.parts.Any(part =>
-                part?.def?.defName == "SI_MechanitorSignalSite"
-                || part?.def?.defName == "DoppelgangerCamp");
+                part?.def?.defName == "SI_MechanitorVIPSite"
+                || part?.def?.defName == "SI_DoppelgangerVIPSite");
         }
 
         private float DistanceToNearestSignalInterceptorSpecialSite(PlanetTile tile, PlanetTile layerReferenceTile)
@@ -1405,16 +1405,19 @@ namespace SignalInterceptor
             switch (subtype)
             {
                 case VIPSubtype.DoppelgangerVIP:
-                    return DefDatabase<SitePartDef>.GetNamed("DoppelgangerCamp");
+                    return DefDatabase<SitePartDef>.GetNamed("SI_DoppelgangerVIPSite");
 
                 case VIPSubtype.MechanitorSignalVIP:
-                    return DefDatabase<SitePartDef>.GetNamed("SI_MechanitorSignalSite");
+                    return DefDatabase<SitePartDef>.GetNamed("SI_MechanitorVIPSite");
 
                 case VIPSubtype.PsycasterVIP:
                     return DefDatabase<SitePartDef>.GetNamed("SI_PsycasterVIPSite");
 
                 case VIPSubtype.ShuttleVIP:
                     return DefDatabase<SitePartDef>.GetNamed("SI_ShuttleVIPSite");
+
+                case VIPSubtype.PilgrimVIP:
+                    return DefDatabase<SitePartDef>.GetNamed("SI_PilgrimVIPSite");
 
                 default:
                     return DefDatabase<SitePartDef>.GetNamed("VIPCapture");

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+  <SitePartDef>
+    <defName>SI_PilgrimVIPSite</defName>
+    <label>camp of lonely pilgrim</label>
+    <description>A strong pilgrim who has set up camp to rest and regain his strength.</description>
+
+    <siteTexture>World/WorldObjects/Sites/Camp</siteTexture>
+    <expandingIconTexture>World/WorldObjects/Sites/SI_Pilgrim</expandingIconTexture>
+    <applyFactionColorToSiteTexture>true</applyFactionColorToSiteTexture>
+
+    <approachOrderString>Fight the pilgrim</approachOrderString>
+    <approachingReportString>Approaching the pilgrim camp</approachingReportString>
+
+    <wantsThreatPoints>false</wantsThreatPoints>
+    <defaultHidden>false</defaultHidden>
+  </SitePartDef>
+</Defs>
