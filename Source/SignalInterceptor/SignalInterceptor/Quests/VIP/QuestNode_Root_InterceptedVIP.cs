@@ -565,10 +565,10 @@ namespace SignalInterceptor
                 return false;
 
             const int attempts = 700;
-            const int minDist = 4;
-            const int maxDist = 650;
-            const float strictMaxDeviation = 35f;
-            const float looseMaxDeviation = 90f;
+            const int minDist = 6;
+            const int maxDist = 280;
+            const float strictMaxDeviation = 28f;
+            const float looseMaxDeviation = 65f;
 
             List<PlanetTile> strictCandidates = new List<PlanetTile>();
             List<PlanetTile> looseCandidates = new List<PlanetTile>();
@@ -652,7 +652,7 @@ namespace SignalInterceptor
 
             // Последний fallback: если маршрутная логика не нашла точку,
             // спавним обычный сайт в расширенном радиусе от игрока.
-            if (TryFindLooseSiteTile(playerMap, 12, 650, out resultTile))
+            if (TryFindLooseSiteTile(playerMap, 12, 320, out resultTile))
             {
                 Log.Warning("[Signal Interceptor] Shuttle route tile fallback used. " +
                             "Faction: " + faction.Name +
@@ -776,15 +776,15 @@ namespace SignalInterceptor
 
                 case VIPSubtype.PsycasterVIP:
                     signalTier = 0;
-                    return TryFindLooseSiteTile(map, 12, 160, out tile);
+                    return TryFindLooseSiteTile(map, 12, 95, out tile);
 
                 case VIPSubtype.PilgrimVIP:
                     signalTier = 0;
-                    return TryFindLooseSiteTile(map, 12, 160, out tile);
+                    return TryFindLooseSiteTile(map, 12, 95, out tile);
 
                 default:
                     signalTier = 0;
-                    return TryFindLooseSiteTile(map, 12, 160, out tile);
+                    return TryFindLooseSiteTile(map, 12, 95, out tile);
             }
         }
 
@@ -799,16 +799,16 @@ namespace SignalInterceptor
 
             PlanetTile playerTile = map.Tile;
 
-            const int attempts = 3000;
+            const int attempts = 1200;
             const float minDistanceFromPlayer = 16f;
-            const float maxDistanceFromPlayer = 120f;
-            const float minSettlementDistance = 12f;
+            const float maxDistanceFromPlayer = 95f;
+            const float minSettlementDistance = 10f;
 
             List<WeightedSiteTile> candidates = new List<WeightedSiteTile>();
 
             for (int i = 0; i < attempts; i++)
             {
-                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 16, maxDist: 120))
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 16, maxDist: 95))
                     continue;
 
                 if (!IsValidSiteTile(tile))
@@ -927,14 +927,14 @@ namespace SignalInterceptor
 
             const int attempts = 800;
             const float minDistanceFromPlayer = 20f;
-            const float maxDistanceFromPlayer = 180f;
+            const float maxDistanceFromPlayer = 130f;
             const float minSettlementDistance = 6f;
 
             List<WeightedSiteTile> candidates = new List<WeightedSiteTile>();
 
             for (int i = 0; i < attempts; i++)
             {
-                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 20, maxDist: 180))
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 20, maxDist: 130))
                     continue;
 
                 if (!IsValidSiteTile(tile))
@@ -1014,7 +1014,7 @@ namespace SignalInterceptor
 
             // Fallback: если тематический поиск не нашёл точку — не фейлим квест,
             // а берём обычный валидный сайт в расширенном радиусе.
-            if (TryFindLooseSiteTile(map, 20, 220, out resultTile))
+            if (TryFindLooseSiteTile(map, 20, 155, out resultTile))
             {
                 float distanceFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, resultTile);
 
