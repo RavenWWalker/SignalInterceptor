@@ -6,7 +6,7 @@
     <label>mechanitor signal</label>
     <description>A moving source of unusual mechanoid interference.</description>
 
-    <siteTexture>World/WorldObjects/Sites/Camp</siteTexture>
+    <siteTexture>World/WorldObjects/Sites/Outpost</siteTexture>
     <expandingIconTexture>World/WorldObjects/Sites/SI_Mechanitor</expandingIconTexture>
 
     <approachOrderString>Intercept the mechanitor signal</approachOrderString>
