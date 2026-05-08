@@ -131,7 +131,7 @@
 
   <!-- VIP Quest Descriptions -->
   <SI_VIP_Desc_Shuttle>{0} intercepted a conversation between two shuttle pilots. They discussed that {1} had sent a highly valuable individual with exceptional skills by shuttle from the settlement of {2} to the settlement of {3}. During the flight, the route was struck by a solar flare, causing navigation to malfunction, and some of the systems went into emergency mode, forcing the shuttle to land at an improvised service pad for diagnostics and repairs.\n\nYou can raid the temporary landing site to capture the VIP as a prisoner. Be warned — this will make {1} hostile if they are not already.\n\n{4}\n\nThe VIP shuttle will depart once the crew restores the systems and completes repairs.</SI_VIP_Desc_Shuttle>
-  <SI_VIP_Desc_Psycaster>{0} intercepted a strange signal signature through the comms console. The source is constantly moving and its wavelength is unstable. Triangulation revealed an approximate location, but the trail will soon go cold.\n\nInvestigation may reveal a powerful psycaster. Approach with extreme caution.</SI_VIP_Desc_Psycaster>
+  <SI_VIP_Desc_Psycaster>{0} intercepted a strange psionic signature through the comms console. The source is constantly moving, and its wavelength is unstable, as if the signal is passing not only through the radio spectrum, but through someone's mind. Triangulation revealed an approximate location of the signal, but the trail will soon go cold.\n\nIt may be a powerful psycaster in an unstable combat state.\n\n{2}\n\nApproach with extreme caution: an enemy like this can turn a battle with a single well-timed psychic attack.</SI_VIP_Desc_Psycaster>
   <SI_VIP_Desc_Mechanitor>{0} detected an unusual pattern in mechanoid radio chatter — something almost... human. The source is surrounded by mechanoids and constantly moving. Act fast before the signal is lost.\n\nExpect heavy mechanoid resistance.</SI_VIP_Desc_Mechanitor>
   <SI_VIP_Desc_Pilgrim>{0} intercepted chatter about {1}'s pilgrimage season. A particularly capable pilgrim carrying a sacred relic has stopped to rest. The pilgrim is accompanied by tamed beasts.\n\nCapturing or killing the pilgrim will make {1} hostile.</SI_VIP_Desc_Pilgrim>
   <SI_VIP_Desc_Doppelganger>{0} overheard two settlers discussing a crowd of identical, heavily armed strangers heading in an unknown direction. Their exact coordinates were mentioned in a military briefing. The doppelgangers have made camp, but they will move on soon.\n\nExpect fierce resistance from 10-15 identical combatants.</SI_VIP_Desc_Doppelganger>
@@ -159,7 +159,7 @@
   <SI_Doppelganger_QuestNouns>Parade|Choir|Host|Procession|Carnival|March|Convention|Gathering|Circle|Swarm|Legion|Squad|Call</SI_Doppelganger_QuestNouns>
   <SI_Doppelganger_QuestAdjectives>of the Sorrowful|of the Faceless|of the Replaced|of the Reflected|of the Distorted|of the Impossible|of the Forgotten|of the Hollow|of the Identical|of the False|of the Erased|of the Divided|of the Unreal</SI_Doppelganger_QuestAdjectives>
 
-  <SI_MechanitorSignal_QuestNouns>Protocol|Signal|Circuit|Impulse|Whisper|Pulse|Code|Resonance|Response|Route|Trace|Node</SI_MechanitorSignal_QuestNouns>
+  <SI_MechanitorSignal_QuestNouns>Protocol|Signal|Circuit|Impulse|Whisper|Pulse|Code|Response|Route|Trace|Node</SI_MechanitorSignal_QuestNouns>
   <SI_MechanitorSignal_QuestAdjectives>of the Wandering Core|of Iron Will|of the Alien Mind|of the Dead Machine|of the Lost Mechanitor|of Broken Control|of the Steel Heart|of the Ashen Signal|of the Lone Commander|of the Cold Consciousness|of the Motionless Soul|of the Forgotten Command</SI_MechanitorSignal_QuestAdjectives>
 
   <SI_VIP_Site_MechanitorSignal>mechanitor signal interception</SI_VIP_Site_MechanitorSignal>
@@ -196,5 +196,16 @@
   <SI_ShuttleSecurityDesc3>The VIP is protected by a reinforced detail with solid equipment and training. Attacking without a plan may be costly.</SI_ShuttleSecurityDesc3>
   <SI_ShuttleSecurityDesc4>According to the pilots, the landing pad is guarded by elite security and several reserve combat teams. This is an extremely dangerous target.</SI_ShuttleSecurityDesc4>
   <SI_ShuttleSecurityDesc5>The transmission describes the VIP as an asset of exceptional importance. They are protected by a hand-picked guard force with the best equipment available. Expect maximum resistance.</SI_ShuttleSecurityDesc5>
+
+  <!-- Psycaster quest names -->
+  <SI_Psycaster_QuestAdjectives>Psionic|Neural|Mental|Silent|Transcendent|Shattered</SI_Psycaster_QuestAdjectives>
+  <SI_Psycaster_QuestNouns>Resonance|Rift|Echo|Mirage|Gap</SI_Psycaster_QuestNouns>
+
+  <!-- Psycaster threat descriptions -->
+  <SI_PsycasterThreatDesc1>Intercepted fragments indicate weak psionic activity. The target is dangerous, but their abilities are likely limited to a few basic techniques.</SI_PsycasterThreatDesc1>
+  <SI_PsycasterThreatDesc2>The signature is stronger than normal. Expect a psycaster capable of disrupting formations, stunning targets, and creating chaos in close combat.</SI_PsycasterThreatDesc2>
+  <SI_PsycasterThreatDesc3>The source emits a powerful and stable psionic field. This opponent may combine direct attacks, mind control, and sudden repositioning across the battlefield.</SI_PsycasterThreatDesc3>
+  <SI_PsycasterThreatDesc4>The signal is unstable and dangerously saturated with psionic energy. This is likely an elite psycaster with access to destructive combat techniques and rapid recovery from neural heat.</SI_PsycasterThreatDesc4>
+  <SI_PsycasterThreatDesc5>The console can barely maintain the lock: the source is pressing against the spectrum itself. This is an exceptionally powerful psycaster, capable of surviving a prolonged fight and destroying an unprepared squad with a chain of devastating psychic strikes.</SI_PsycasterThreatDesc5>
 
 </LanguageData>

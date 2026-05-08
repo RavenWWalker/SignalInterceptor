@@ -166,6 +166,7 @@ namespace SignalInterceptor
 
             int vipTier = GetVIPTierForQuest(threatPoints);
             string shuttleSecurityDesc = GetShuttleSecurityDescription(vipTier);
+            string psycasterThreatDesc = GetPsycasterThreatDescription(vipTier);
 
             string questName = GetQuestName(subtype);
 
@@ -177,7 +178,8 @@ namespace SignalInterceptor
                 coloredFaction,
                 originName,
                 destinationName,
-                shuttleSecurityDesc
+                shuttleSecurityDesc,
+                psycasterThreatDesc
             );
 
             List<Rule> nameRules = new List<Rule>
@@ -278,6 +280,23 @@ namespace SignalInterceptor
             {
                 new Rule_String("questDescription", "The intercepted signal was too distorted to decode.")
             });
+        }
+
+        private string GetPsycasterThreatDescription(int tier)
+        {
+            if (tier >= 9)
+                return "SI_PsycasterThreatDesc5".Translate();
+
+            if (tier >= 7)
+                return "SI_PsycasterThreatDesc4".Translate();
+
+            if (tier >= 5)
+                return "SI_PsycasterThreatDesc3".Translate();
+
+            if (tier >= 3)
+                return "SI_PsycasterThreatDesc2".Translate();
+
+            return "SI_PsycasterThreatDesc1".Translate();
         }
 
         private List<Faction> GetValidFactionsForVIP(Map map)
@@ -1306,7 +1325,6 @@ namespace SignalInterceptor
                     "Шёпот",
                     "Пульс",
                     "Код",
-                    "Резонанс",
                     "Отклик",
                     "Маршрут",
                     "След",
@@ -1334,6 +1352,36 @@ namespace SignalInterceptor
             );
 
             return nouns.RandomElement() + " " + adjectives.RandomElement();
+        }
+
+        private string GeneratePsycasterQuestName()
+        {
+            List<string> adjectives = GetTranslatedStringList(
+                "SI_Psycaster_QuestAdjectives",
+                new List<string>
+                {
+            "Псионический",
+            "Нейронный",
+            "Ментальный",
+            "Безмолвный",
+            "Запредельный",
+            "Осколочный"
+                }
+            );
+
+            List<string> nouns = GetTranslatedStringList(
+                "SI_Psycaster_QuestNouns",
+                new List<string>
+                {
+            "Резонанс",
+            "Разлом",
+            "Отголосок",
+            "Мираж",
+            "Разрыв"
+                }
+            );
+
+            return adjectives.RandomElement() + " " + nouns.RandomElement();
         }
 
         private string GenerateDoppelgangerQuestName()
@@ -1525,7 +1573,7 @@ namespace SignalInterceptor
                     return GenerateShuttleQuestName();
 
                 case VIPSubtype.PsycasterVIP:
-                    return "SI_VIP_Name_Psycaster".Translate();
+                    return GeneratePsycasterQuestName();
 
                 case VIPSubtype.MechanitorSignalVIP:
                     return GenerateMechanitorSignalQuestName();
@@ -1571,7 +1619,8 @@ namespace SignalInterceptor
             string coloredFaction,
             string originSettlement,
             string destinationSettlement,
-            string shuttleSecurityDesc)
+            string shuttleSecurityDesc,
+            string psycasterThreatDesc)
         {
             switch (subtype)
             {

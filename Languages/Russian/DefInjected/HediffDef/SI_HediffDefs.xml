@@ -11,9 +11,9 @@
   <SI_DoppelgangerMark.stages.0.label>клон</SI_DoppelgangerMark.stages.0.label>
 
   <SI_RestoringMechanisms.label>восстанавливающие архо-механиты</SI_RestoringMechanisms.label>
-  <SI_RestoringMechanisms.description>Продвинутые архо-механиты, которые восстанавливают тело пси-кастера. Их отличительным недостатком является неспособность регенерировать живую ткань во время прямых столкновений.</SI_RestoringMechanisms.description>
+  <SI_RestoringMechanisms.description>Продвинутые архо-механиты, восстанавливающие тело пси-кастера после полученных повреждений. Их отличительным недостатком является неспособность безопасно регенерировать живую ткань, пока носитель находится под прямым травматическим стрессом, поэтому после получения урона колония механитов временно переходит в спящий режим.\n\n  Лечение повреждений: +200%\n  Лечение кровоточащих ран: +145%\n  Восстановление кровопотери: +1.2%/сек.\n  Неактивны после получения урона: 10 сек.</SI_RestoringMechanisms.description>
 
-  <SI_EntropyStabilizer.label>стабилизатор энтропии</SI_EntropyStabilizer.label>
-  <SI_EntropyStabilizer.description>Псионический стабилизатор, помогающий пси-кастеру быстрее восстанавливаться от нейроперегрева после выхода из боя.</SI_EntropyStabilizer.description>
+  <SI_EntropyStabilizer.label>пси-кровь</SI_EntropyStabilizer.label>
+  <SI_EntropyStabilizer.description>В результате многочисленных псионических ритуалов кровь данного псионика приобрела неожиданное свойство к гомеостатическому нейроохлаждению, позволяющему ему дольше оставаться в зоне боевых действий, используя весь свой потенциал.\n\n  Снижение нейроперегрева: -5/сек.</SI_EntropyStabilizer.description>
 
 </LanguageData>

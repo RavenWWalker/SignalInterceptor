@@ -3,8 +3,8 @@
 
   <HediffDef>
     <defName>SI_RestoringMechanisms</defName>
-    <label>restoring mechanisms</label>
-    <description>Hidden mechanisms repair the psycaster's body after it has escaped combat. The system remains dormant shortly after the pawn takes damage.</description>
+    <label>restoring archomechanites</label>
+    <description>Advanced archomechanites restore the psycaster's body after injury. Their main flaw is that the colony of mechanites cannot safely rebuild living tissue while the host is under direct trauma stress, so the effect becomes dormant for a short time after the pawn takes damage.\n\nHealing: +200%\n\nBleeding wound repair: +145%\n\nBlood loss recovery: +1.2% per sec.\n\nInactive after taking damage: 10 sec.</description>
     <hediffClass>HediffWithComps</hediffClass>
     <isBad>false</isBad>
     <tendable>false</tendable>
@@ -26,8 +26,8 @@
 
   <HediffDef>
     <defName>SI_EntropyStabilizer</defName>
-    <label>entropy stabilizer</label>
-    <description>A psionic stabilizer that helps the psycaster recover neural heat after escaping combat.</description>
+    <label>psy-blood</label>
+    <description>After countless psionic rites, this psycaster's blood has developed an unexpected property of homeostatic neural cooling, allowing the psycaster to remain in combat longer while drawing on their full potential.\n\nNeural heat reduction: -5/sec.</description>
     <hediffClass>HediffWithComps</hediffClass>
     <isBad>false</isBad>
     <tendable>false</tendable>
