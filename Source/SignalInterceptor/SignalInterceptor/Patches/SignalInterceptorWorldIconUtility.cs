@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using RimWorld;
 using RimWorld.Planet;
 using System;
 using System.Collections.Generic;
@@ -107,50 +108,58 @@ namespace SignalInterceptor
 
     internal static class SignalInterceptorWorldIconUtility
     {
+        public enum TopIconColorMode
+        {
+            White,
+            Faction
+        }
+
         /*
          * Add new custom SitePartDef.defName entries here.
          *
          * Format:
-         * "SitePartDefName", new IconOverlaySettings(horizontalExtraPixels, verticalExtraPixels)
+         * "SitePartDefName", new IconOverlaySettings(horizontalExtraPixels, verticalExtraPixels, topIconColorMode)
          *
-         * Current working values:
-         * horizontal = 2f
-         * vertical   = 4f
+         * White:
+         *   top icon is drawn as white/original white mask.
+         *
+         * Faction:
+         *   top icon is drawn using site faction color.
          */
         private static readonly Dictionary<string, IconOverlaySettings> PatchedSiteParts =
             new Dictionary<string, IconOverlaySettings>
             {
                 {
                     "SI_MechanitorVIPSite",
-                    new IconOverlaySettings(2f, 4f)
+                    new IconOverlaySettings(2f, 4f, TopIconColorMode.White)
                 },
 
                 {
                     "SI_DoppelgangerVIPSite",
-                    new IconOverlaySettings(2f, 3f)
+                    new IconOverlaySettings(2f, 3f, TopIconColorMode.White)
                 },
 
                 {
                     "SI_PsycasterVIPSite",
-                    new IconOverlaySettings(2f, 3f)
+                    new IconOverlaySettings(2f, 3f, TopIconColorMode.White)
                 },
 
                 {
                     "SI_PilgrimVIPSite",
-                    new IconOverlaySettings(2f, 3f)
-                },
+                    new IconOverlaySettings(2f, 3f, TopIconColorMode.Faction)
+                }
 
                 /*
-                 * Examples for future sites
+                 * Examples for future sites:
                  *
                  * {
                  *     "SI_ShuttleVIPSite",
-                 *     new IconOverlaySettings(2f, 4f)
+                 *     new IconOverlaySettings(2f, 4f, TopIconColorMode.Faction)
                  * },
                  *
                  * {
                  *     "SI_AncientDroneSite",
-                 *     new IconOverlaySettings(2f, 4f)
+                 *     new IconOverlaySettings(2f, 4f, TopIconColorMode.White)
                  * }
                  */
             };
@@ -162,11 +171,16 @@ namespace SignalInterceptor
         {
             public readonly float extraPixelsHorizontal;
             public readonly float extraPixelsVertical;
+            public readonly TopIconColorMode topIconColorMode;
 
-            public IconOverlaySettings(float extraPixelsHorizontal, float extraPixelsVertical)
+            public IconOverlaySettings(
+                float extraPixelsHorizontal,
+                float extraPixelsVertical,
+                TopIconColorMode topIconColorMode)
             {
                 this.extraPixelsHorizontal = extraPixelsHorizontal;
                 this.extraPixelsVertical = extraPixelsVertical;
+                this.topIconColorMode = topIconColorMode;
             }
         }
 
@@ -217,7 +231,7 @@ namespace SignalInterceptor
                         rect.width *= -1f;
                     }
 
-                    GUI.color = Color.white;
+                    GUI.color = GetTopIconColor(worldObject, settings);
 
                     /*
                      * Important:
@@ -242,6 +256,45 @@ namespace SignalInterceptor
             {
                 GUI.color = oldColor;
             }
+        }
+
+        private static Color GetTopIconColor(WorldObject worldObject, IconOverlaySettings settings)
+        {
+            if (settings.topIconColorMode == TopIconColorMode.White)
+                return Color.white;
+
+            if (settings.topIconColorMode == TopIconColorMode.Faction)
+            {
+                Color factionColor;
+
+                if (TryGetFactionColor(worldObject, out factionColor))
+                    return factionColor;
+
+                return Color.white;
+            }
+
+            return Color.white;
+        }
+
+        private static bool TryGetFactionColor(WorldObject worldObject, out Color color)
+        {
+            color = Color.white;
+
+            if (worldObject == null)
+                return false;
+
+            Faction faction = worldObject.Faction;
+
+            if (faction == null)
+                return false;
+
+            /*
+             * Normal RimWorld faction color.
+             */
+            color = faction.Color;
+            color.a = 1f;
+
+            return true;
         }
 
         public static bool TryGetOverlaySettings(WorldObject worldObject, out IconOverlaySettings settings)
