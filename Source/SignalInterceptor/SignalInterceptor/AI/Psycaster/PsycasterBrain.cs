@@ -394,6 +394,67 @@ namespace SignalInterceptor.AI.Psycaster
             if (snap.caster == null || snap.caster.Dead || snap.caster.Downed)
                 return false;
 
+            int rangedLos = snap.enemiesWithLosToCaster != null
+                ? snap.enemiesWithLosToCaster.Count(e => e != null && e.IsRanged && e.canShootNow)
+                : 0;
+
+            int enemyCount = snap.enemies != null ? snap.enemies.Count : 0;
+
+            bool lowHp = snap.casterHpFraction <= 0.70f;
+            bool damagedButStable = snap.casterHpFraction <= 0.85f;
+            bool dangerousHp = snap.casterHpFraction <= 0.55f;
+            bool criticalHp = snap.casterHpFraction <= 0.45f;
+
+            bool highEntropy = snap.casterEntropyFraction >= 0.72f;
+
+            bool underRangedPressure =
+                rangedLos >= 2 ||
+                snap.totalIncomingDps >= 18f;
+
+            bool severeRangedPressure =
+                rangedLos >= 3 ||
+                snap.totalIncomingDps >= 28f;
+
+            bool manyEnemiesWithRanged =
+                enemyCount >= 4 && rangedLos >= 2;
+
+            /*
+             * Главный фикс:
+             * Skip нельзя тратить на offensive-pick, когда кастер уже под давлением дальников.
+             *
+             * Emergency/recovery Skip вызывается напрямую через TryEmergencyRetreat /
+             * TryRecoveryKiteSkip и этот метод не блокирует.
+             *
+             * Этот метод блокирует только scorers, то есть offensive Scorer_Skip.
+             */
+            if (abilityDefName == "Skip")
+            {
+                if (criticalHp)
+                    return true;
+
+                if (dangerousHp && underRangedPressure)
+                    return true;
+
+                if (lowHp && severeRangedPressure)
+                    return true;
+
+                if (damagedButStable && manyEnemiesWithRanged)
+                    return true;
+
+                if (currentStance == PsycasterStance.Kite && damagedButStable && underRangedPressure)
+                    return true;
+
+                if (currentStance == PsycasterStance.CrowdControl && damagedButStable && underRangedPressure)
+                    return true;
+
+                if (currentStance == PsycasterStance.Survive)
+                    return true;
+            }
+
+            /*
+             * Эти способности сами являются defensive escape tools.
+             * Их не резервируем от самих себя.
+             */
             bool defensiveAbility =
                 abilityDefName == "Skipshield" ||
                 abilityDefName == "Invisibility" ||
@@ -405,16 +466,10 @@ namespace SignalInterceptor.AI.Psycaster
             if (defensiveAbility)
                 return false;
 
-            int rangedLos = snap.enemiesWithLosToCaster != null
-                ? snap.enemiesWithLosToCaster.Count(e => e != null && e.IsRanged && e.canShootNow)
-                : 0;
-
-            bool lowHp = snap.casterHpFraction <= 0.55f;
-            bool dangerousHp = snap.casterHpFraction <= 0.45f;
-            bool highEntropy = snap.casterEntropyFraction >= 0.72f;
-            bool underRangedPressure = rangedLos >= 2 || snap.totalIncomingDps >= 18f;
-            bool severeRangedPressure = rangedLos >= 3 || snap.totalIncomingDps >= 28f;
-
+            /*
+             * Остальные offensive/control способности можно заблокировать,
+             * если ситуация требует держать ресурс под защиту.
+             */
             if (dangerousHp && underRangedPressure)
                 return true;
 
@@ -429,7 +484,6 @@ namespace SignalInterceptor.AI.Psycaster
 
             return false;
         }
-
         private bool TryExecuteDownedPlayerPawn()
         {
             if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
@@ -568,7 +622,7 @@ namespace SignalInterceptor.AI.Psycaster
 
             int now = Find.TickManager.TicksGame;
 
-            if (!recoveryMode && ShouldEnterRecoveryMode())
+            if (!recoveryMode && ShouldEnterRecoveryMode(snap))
             {
                 recoveryMode = true;
                 recoveryStartedTick = now;
@@ -588,7 +642,8 @@ namespace SignalInterceptor.AI.Psycaster
                             + caster.LabelShort
                             + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
                             + " | bleeding=" + HasDangerousBleeding()
-                            + " | canRegen=" + CanRegenerateNow());
+                            + " | canRegen=" + CanRegenerateNow()
+                            + " | reason=" + GetRecoveryReasonForLog(snap));
             }
 
             if (!recoveryMode)
@@ -626,33 +681,44 @@ namespace SignalInterceptor.AI.Psycaster
             if (!IsCasterFreeToAct())
                 return;
 
-            // В recovery режиме пси-кастер имеет право сначала прожать emergency Skip.
-            // Иначе он может умереть от огня до того, как реген вообще начнётся.
+            /*
+             * 1) Сначала пробуем recovery-kite Skip.
+             * Это спасает от животных/милишников, которые догоняют кастера во время лечения.
+             */
+            if (snap != null && snap.HasEnemies && TryRecoveryKiteSkip(snap))
+                return;
+
+            /*
+             * 2) Затем обычный emergency retreat.
+             * Он срабатывает на critical HP / surround / ranged pressure.
+             */
             if (snap != null && snap.HasEnemies && TryEmergencyRetreat(snap))
                 return;
 
             /*
-             * Старое поведение:
-             * if (caster.CurJobDef == JobDefOf.Goto) return;
-             *
-             * Проблема:
-             * кастер один раз выбирал клетку отхода и больше не проверял,
-             * догнали ли его животные / melee-враги.
-             *
-             * Новое поведение:
-             * если текущий Goto всё ещё безопасен — не трогаем.
-             * если враг снова близко — пересчитываем отход.
+             * 3) Новый важный блок:
+             * если Skip недоступен, но кастер под ranged pressure,
+             * он должен прожать Invisibility / Smokepop, а не просто бежать пешком под пулями.
+             */
+            if (snap != null && snap.HasEnemies && TryRecoveryDefensivePsycast(snap))
+                return;
+
+            /*
+             * 4) Если уже идёт безопасный Goto — не трогаем.
              */
             if (caster.CurJobDef == JobDefOf.Goto && IsRecoveryPositionStillSafe(snap))
                 return;
 
+            /*
+             * 5) Если psy-tools не сработали, тогда обычный recovery retreat.
+             */
             IntVec3 retreatCell;
 
             if (snap != null && snap.HasEnemies && TryFindEmergencyRetreatCell(snap, out retreatCell))
             {
                 Job job = JobMaker.MakeJob(JobDefOf.Goto, retreatCell);
                 job.locomotionUrgency = LocomotionUrgency.Sprint;
-                job.expiryInterval = Rand.RangeInclusive(90, 150);
+                job.expiryInterval = Rand.RangeInclusive(75, 120);
 
                 caster.jobs.StartJob(job, JobCondition.InterruptForced);
 
@@ -678,6 +744,403 @@ namespace SignalInterceptor.AI.Psycaster
                             + " | canRegen=" + (comp != null && comp.CanRegenerateNow)
                             + " | ticksSinceDamage=" + (comp != null ? comp.TicksSinceDamage : -1));
             }
+        }
+
+        private bool TryRecoveryDefensivePsycast(BattlefieldSnapshot snap)
+        {
+            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null || !snap.HasEnemies)
+                return false;
+
+            float hp = caster.health != null && caster.health.summaryHealth != null
+                ? caster.health.summaryHealth.SummaryHealthPercent
+                : 1f;
+
+            int rangedLos = snap.enemiesWithLosToCaster != null
+                ? snap.enemiesWithLosToCaster.Count(e => e != null && e.IsRanged && e.canShootNow)
+                : 0;
+
+            int enemyCount = snap.enemies != null ? snap.enemies.Count : 0;
+
+            bool underRangedPressure =
+                rangedLos >= 1 ||
+                snap.totalIncomingDps >= 10f;
+
+            bool severeRangedPressure =
+                rangedLos >= 2 ||
+                snap.totalIncomingDps >= 20f;
+
+            bool critical = hp <= 0.45f;
+            bool dangerous = hp <= 0.65f;
+            bool damaged = hp <= 0.85f;
+
+            if (!underRangedPressure && !critical && !dangerous)
+                return false;
+
+            /*
+             * 1) Invisibility — лучший panic button против стрелков.
+             */
+            if ((critical || dangerous || severeRangedPressure) && !IsCasterInvisibleNow())
+            {
+                if (TryCastRecoverySelfAbility("Invisibility", PsycasterTuning.InvisibilitySoftCooldownMin, PsycasterTuning.InvisibilitySoftCooldownMax))
+                {
+                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(90, 130);
+                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 60;
+
+                    Log.Message("[Signal Interceptor] Psycaster recovery defensive Invisibility"
+                                + " | HP=" + hp.ToString("F2")
+                                + " | rangedLOS=" + rangedLos
+                                + " | incomingDps=" + snap.totalIncomingDps.ToString("F1")
+                                + " | enemies=" + enemyCount);
+
+                    return true;
+                }
+            }
+
+            /*
+             * 2) Smokepop — если Invisibility недоступна.
+             */
+            if ((dangerous || damaged || severeRangedPressure) && rangedLos >= 1)
+            {
+                if (TryCastRecoverySelfAbility("Smokepop", PsycasterTuning.SmokepopSoftCooldownMin, PsycasterTuning.SmokepopSoftCooldownMax))
+                {
+                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(90, 130);
+                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 60;
+
+                    Log.Message("[Signal Interceptor] Psycaster recovery defensive Smokepop"
+                                + " | HP=" + hp.ToString("F2")
+                                + " | rangedLOS=" + rangedLos
+                                + " | incomingDps=" + snap.totalIncomingDps.ToString("F1")
+                                + " | enemies=" + enemyCount);
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryCastRecoverySelfAbility(string abilityDefName, int softCooldownMin, int softCooldownMax)
+        {
+            if (string.IsNullOrEmpty(abilityDefName))
+                return false;
+
+            if (IsOnSoftCooldown(abilityDefName))
+                return false;
+
+            AbilityDef def = GetAbilityDef(abilityDefName);
+
+            if (def == null)
+                return false;
+
+            object ability = GetPawnAbilityObject(def);
+
+            if (ability == null)
+                return false;
+
+            if (IsAbilityOnCooldown(ability))
+                return false;
+
+            bool casted = gc.TryCastSelfPsyAbility_Public(caster, abilityDefName);
+
+            if (!casted)
+                return false;
+
+            softCooldowns[abilityDefName] = Find.TickManager.TicksGame + Rand.RangeInclusive(softCooldownMin, softCooldownMax);
+
+            pendingMeleeTargetThingId = -1;
+            pendingMeleeUntilTick = -1;
+            pendingMeleeReason = null;
+
+            ClearKillContract("recovery defensive " + abilityDefName);
+
+            return true;
+        }
+
+        private bool IsCasterInvisibleNow()
+        {
+            if (caster == null || caster.health == null || caster.health.hediffSet == null)
+                return false;
+
+            HediffDef invisibilityDef = DefDatabase<HediffDef>.GetNamedSilentFail("PsychicInvisibility");
+
+            if (invisibilityDef == null)
+                return false;
+
+            return caster.health.hediffSet.HasHediff(invisibilityDef);
+        }
+
+        private bool TryRecoveryKiteSkip(BattlefieldSnapshot snap)
+        {
+            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null || !snap.HasEnemies)
+                return false;
+
+            int now = Find.TickManager.TicksGame;
+
+            /*
+             * ВАЖНО:
+             * Не используем слишком длинный nextEmergencyRetreatTick как жёсткий запрет.
+             * В recovery быстрые животные могут догнать кастера раньше,
+             * чем старый emergency cooldown истечёт.
+             *
+             * Но полностью спамить Skip тоже нельзя.
+             * Поэтому используем мягкое окно 150 тиков после последнего emergency Skip.
+             */
+            if (now < nextEmergencyRetreatTick - 210)
+                return false;
+
+            float hp = caster.health != null && caster.health.summaryHealth != null
+                ? caster.health.summaryHealth.SummaryHealthPercent
+                : 1f;
+
+            int closeMeleeOrAnimals = 0;
+            int veryCloseMeleeOrAnimals = 0;
+            float nearestMeleeOrAnimalDist = 999f;
+            Pawn nearestMeleeOrAnimal = null;
+
+            if (snap.enemies != null)
+            {
+                for (int i = 0; i < snap.enemies.Count; i++)
+                {
+                    EnemyAssessment e = snap.enemies[i];
+
+                    if (e == null || e.pawn == null)
+                        continue;
+
+                    if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != caster.Map)
+                        continue;
+
+                    bool meleeLike = e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp;
+
+                    if (!meleeLike)
+                        continue;
+
+                    if (e.distanceToCaster < nearestMeleeOrAnimalDist)
+                    {
+                        nearestMeleeOrAnimalDist = e.distanceToCaster;
+                        nearestMeleeOrAnimal = e.pawn;
+                    }
+
+                    if (e.distanceToCaster <= 10f)
+                        closeMeleeOrAnimals++;
+
+                    if (e.distanceToCaster <= 4f)
+                        veryCloseMeleeOrAnimals++;
+                }
+            }
+
+            /*
+             * Условия recovery-skip.
+             *
+             * Главная цель:
+             * не ждать, пока животное ударит.
+             * Если оно уже в 8-10 клетках и кастер лечится/кровоточит —
+             * лучше потратить Skip и сохранить реген.
+             */
+            bool shouldSkip =
+                (hp <= 0.82f && nearestMeleeOrAnimalDist <= 12f) ||
+                (hp <= 0.90f && nearestMeleeOrAnimalDist <= 8f) ||
+                (veryCloseMeleeOrAnimals >= 1) ||
+                (closeMeleeOrAnimals >= 2);
+
+            if (!shouldSkip)
+                return false;
+
+            AbilityDef skipDef = GetAbilityDef("Skip");
+
+            if (skipDef == null)
+                return false;
+
+            object ability = GetPawnAbilityObject(skipDef);
+
+            if (ability == null)
+                return false;
+
+            if (IsAbilityOnCooldown(ability))
+                return false;
+
+            IntVec3 skipCell;
+
+            if (!TryFindRecoverySkipCell(snap, out skipCell))
+                return false;
+
+            bool casted = gc.TryCastPsyAbilityToDestination_Public(
+                caster,
+                "Skip",
+                caster,
+                skipCell);
+
+            if (!casted)
+                return false;
+
+            pendingMeleeTargetThingId = -1;
+            pendingMeleeUntilTick = -1;
+            pendingMeleeReason = null;
+
+            ClearKillContract("recovery kite skip");
+
+            ApplySoftCooldown("Skip");
+
+            /*
+             * Короткое окно: это именно recovery-kite, а не обычный боевой escape.
+             * Если животное снова догнало — через несколько секунд можно повторить.
+             */
+            nextEmergencyRetreatTick = Find.TickManager.TicksGame + Rand.RangeInclusive(150, 240);
+            nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupShort + 75;
+            nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(75, 105);
+
+            Log.Message("[Signal Interceptor] Psycaster recovery-kite Skip self to "
+                        + skipCell
+                        + " | HP=" + hp.ToString("F2")
+                        + " | nearestMelee="
+                        + (nearestMeleeOrAnimal != null ? nearestMeleeOrAnimal.LabelShort : "null")
+                        + " | nearestD=" + nearestMeleeOrAnimalDist.ToString("F1")
+                        + " | closeMelee=" + closeMeleeOrAnimals
+                        + " | veryCloseMelee=" + veryCloseMeleeOrAnimals);
+
+            return true;
+        }
+
+        private bool TryFindEmergencyRetreatCell(BattlefieldSnapshot snap, out IntVec3 result)
+        {
+            result = IntVec3.Invalid;
+
+            if (snap == null || caster == null || caster.Map == null || snap.topThreat == null || snap.topThreat.pawn == null)
+                return false;
+
+            Map map = caster.Map;
+            Pawn threat = snap.topThreat.pawn;
+
+            IntVec3 best = IntVec3.Invalid;
+            float bestScore = float.MinValue;
+
+            for (int i = 0; i < 180; i++)
+            {
+                IntVec3 cell;
+
+                if (!CellFinder.TryFindRandomCellNear(
+                    caster.Position,
+                    map,
+                    30,
+                    c => c.InBounds(map)
+                         && c.Standable(map)
+                         && c.GetFirstPawn(map) == null
+                         && c.DistanceToEdge(map) >= 8
+                         && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
+                    out cell))
+                {
+                    continue;
+                }
+
+                float distFromCaster = cell.DistanceTo(caster.Position);
+                float distFromThreat = cell.DistanceTo(threat.Position);
+
+                if (distFromCaster < 8f)
+                    continue;
+
+                if (distFromThreat < 14f)
+                    continue;
+
+                float nearestMeleeOrAnimal = 999f;
+                float nearestAnyEnemy = 999f;
+                float nearestRangedLos = 999f;
+                int visibleShooters = 0;
+
+                if (snap.enemies != null)
+                {
+                    for (int eIndex = 0; eIndex < snap.enemies.Count; eIndex++)
+                    {
+                        EnemyAssessment e = snap.enemies[eIndex];
+
+                        if (e == null || e.pawn == null)
+                            continue;
+
+                        if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != map)
+                            continue;
+
+                        float ed = cell.DistanceTo(e.pawn.Position);
+
+                        if (ed < nearestAnyEnemy)
+                            nearestAnyEnemy = ed;
+
+                        if (e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp)
+                        {
+                            if (ed < nearestMeleeOrAnimal)
+                                nearestMeleeOrAnimal = ed;
+                        }
+
+                        if (e.IsRanged && GenSight.LineOfSight(e.pawn.Position, cell, map))
+                        {
+                            visibleShooters++;
+
+                            if (ed < nearestRangedLos)
+                                nearestRangedLos = ed;
+                        }
+                    }
+                }
+
+                /*
+                 * Для обычного recovery-Goto порог ниже, чем для Skip,
+                 * но всё равно не выбираем клетку почти в пасти у животного.
+                 */
+                if (nearestMeleeOrAnimal < 14f)
+                    continue;
+
+                if (nearestAnyEnemy < 10f)
+                    continue;
+
+                float score = 0f;
+
+                score += distFromThreat * 2.0f;
+
+                if (nearestMeleeOrAnimal < 999f)
+                    score += nearestMeleeOrAnimal * 2.8f;
+
+                if (nearestAnyEnemy < 999f)
+                    score += nearestAnyEnemy * 1.2f;
+
+                score += distFromCaster * 0.25f;
+
+                score -= visibleShooters * 22f;
+
+                if (nearestRangedLos < 24f)
+                    score -= (24f - nearestRangedLos) * 4f;
+
+                if (HomeAnchor.IsValid)
+                {
+                    float homeDist = cell.DistanceTo(HomeAnchor);
+
+                    if (homeDist > MaxHomeDistance)
+                        score -= 120f;
+                }
+
+                /*
+                 * Не выбираем клетку, которая приближает к topThreat.
+                 * Это важно, когда случайный Goto выбирает диагональ,
+                 * которую животное быстро перехватывает.
+                 */
+                float currentThreatDist = caster.Position.DistanceTo(threat.Position);
+
+                if (distFromThreat < currentThreatDist)
+                    score -= 50f;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = cell;
+                }
+            }
+
+            if (!best.IsValid)
+                return false;
+
+            result = best;
+            return true;
         }
 
         private bool IsRecoveryPositionStillSafe(BattlefieldSnapshot snap)
@@ -754,20 +1217,146 @@ namespace SignalInterceptor.AI.Psycaster
                 .Any(h => h != null && h.Severity > 0f && h.BleedRate > 0.01f);
         }
 
-        private bool ShouldEnterRecoveryMode()
+        private bool ShouldEnterRecoveryMode(BattlefieldSnapshot snap)
         {
             if (caster == null || caster.health == null)
                 return false;
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
+            /*
+             * Жёсткий критический порог.
+             * Сюда входим всегда.
+             */
             if (hp <= 0.45f)
                 return true;
 
+            /*
+             * Старое правило: если HP просел и есть опасное кровотечение —
+             * пора отходить.
+             */
             if (hp <= 0.58f && HasDangerousBleeding())
                 return true;
 
+            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
+                return false;
+
+            int closeMeleeOrAnimals = 0;
+            int veryCloseMeleeOrAnimals = 0;
+            bool dangerousCloseAnimal = false;
+            bool dangerousCloseHumanMelee = false;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned)
+                    continue;
+
+                bool meleeLike = e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp;
+
+                if (!meleeLike)
+                    continue;
+
+                if (e.distanceToCaster <= 6f)
+                    closeMeleeOrAnimals++;
+
+                if (e.distanceToCaster <= 2.5f)
+                    veryCloseMeleeOrAnimals++;
+
+                /*
+                 * Животное рядом — это реальная угроза, даже если у него threatScore не огромный.
+                 * Медведи/пумы/ленивцы регулярно сбивают реген.
+                 */
+                if (e.IsAnimal && e.distanceToCaster <= 5f && e.threatScore >= 2f)
+                    dangerousCloseAnimal = true;
+
+                /*
+                 * Wimp/Melee-гуманоид тоже может зацарапать кастера,
+                 * особенно если бой затянулся и реген постоянно сбивается.
+                 */
+                if ((e.IsMelee || e.role == EnemyRole.Wimp) && e.distanceToCaster <= 2.5f)
+                    dangerousCloseHumanMelee = true;
+            }
+
+            /*
+             * Новый важный блок:
+             * если кастер уже не фулловый и рядом есть контактная угроза —
+             * не ждём 45% HP. Уходим раньше.
+             */
+            if (hp <= 0.82f && veryCloseMeleeOrAnimals >= 1)
+                return true;
+
+            if (hp <= 0.75f && closeMeleeOrAnimals >= 1)
+                return true;
+
+            if (hp <= 0.88f && dangerousCloseAnimal)
+                return true;
+
+            if (hp <= 0.78f && dangerousCloseHumanMelee)
+                return true;
+
+            /*
+             * Если рядом сразу несколько ближников/животных —
+             * это уже окружение, даже при неплохом HP.
+             */
+            if (hp <= 0.90f && closeMeleeOrAnimals >= 2)
+                return true;
+
             return false;
+        }
+
+        private string GetRecoveryReasonForLog(BattlefieldSnapshot snap)
+        {
+            if (caster == null || caster.health == null)
+                return "unknown";
+
+            float hp = caster.health.summaryHealth.SummaryHealthPercent;
+
+            if (hp <= 0.45f)
+                return "criticalHp";
+
+            if (hp <= 0.58f && HasDangerousBleeding())
+                return "bleedingLowHp";
+
+            if (snap == null || snap.enemies == null)
+                return "unknown";
+
+            int closeMeleeOrAnimals = 0;
+            int veryCloseMeleeOrAnimals = 0;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                bool meleeLike = e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp;
+
+                if (!meleeLike)
+                    continue;
+
+                if (e.distanceToCaster <= 6f)
+                    closeMeleeOrAnimals++;
+
+                if (e.distanceToCaster <= 2.5f)
+                    veryCloseMeleeOrAnimals++;
+            }
+
+            if (hp <= 0.82f && veryCloseMeleeOrAnimals >= 1)
+                return "veryCloseMeleePressure";
+
+            if (hp <= 0.75f && closeMeleeOrAnimals >= 1)
+                return "closeMeleePressure";
+
+            if (hp <= 0.90f && closeMeleeOrAnimals >= 2)
+                return "multipleMeleePressure";
+
+            return "unknown";
         }
 
         private bool IsRecoveredEnough()
@@ -941,14 +1530,56 @@ namespace SignalInterceptor.AI.Psycaster
 
             int adjacentCount = snap.enemiesAdjacent != null ? snap.enemiesAdjacent.Count : 0;
 
+            int closeMeleeOrAnimals = 0;
+            int veryCloseMeleeOrAnimals = 0;
+
+            if (snap.enemies != null)
+            {
+                for (int i = 0; i < snap.enemies.Count; i++)
+                {
+                    EnemyAssessment e = snap.enemies[i];
+
+                    if (e == null || e.pawn == null)
+                        continue;
+
+                    if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned)
+                        continue;
+
+                    bool meleeLike = e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp;
+
+                    if (!meleeLike)
+                        continue;
+
+                    if (e.distanceToCaster <= 6f)
+                        closeMeleeOrAnimals++;
+
+                    if (e.distanceToCaster <= 2.5f)
+                        veryCloseMeleeOrAnimals++;
+                }
+            }
+
             bool criticalHp = snap.casterHpFraction <= 0.40f;
-            bool lowHpUnderFire = snap.casterHpFraction <= 0.55f && snap.IsUnderRangedFire && !singleEnemy;
+
+            bool lowHpUnderFire =
+                snap.casterHpFraction <= 0.55f &&
+                snap.IsUnderRangedFire &&
+                !singleEnemy;
 
             bool surrounded =
                 adjacentCount >= 3 ||
-                (adjacentCount >= 2 && snap.casterHpFraction <= 0.60f);
+                (adjacentCount >= 2 && snap.casterHpFraction <= 0.70f);
 
-            if (!criticalHp && !lowHpUnderFire && !surrounded)
+            /*
+             * Новый блок:
+             * если кастер уже просел и ближник стоит прямо в контакте,
+             * разрешаем emergency Skip даже против одного врага.
+             */
+            bool meleeEmergency =
+                (snap.casterHpFraction <= 0.72f && veryCloseMeleeOrAnimals >= 1) ||
+                (snap.casterHpFraction <= 0.62f && closeMeleeOrAnimals >= 1) ||
+                (snap.casterHpFraction <= 0.85f && closeMeleeOrAnimals >= 2);
+
+            if (!criticalHp && !lowHpUnderFire && !surrounded && !meleeEmergency)
                 return false;
 
             AbilityDef skipDef = GetAbilityDef("Skip");
@@ -982,16 +1613,25 @@ namespace SignalInterceptor.AI.Psycaster
             pendingMeleeUntilTick = -1;
             pendingMeleeReason = null;
 
+            ClearKillContract("emergency retreat");
+
             ApplySoftCooldown("Skip");
 
-            nextEmergencyRetreatTick = Find.TickManager.TicksGame + Rand.RangeInclusive(360, 540);
+            /*
+             * Немного короче, чем было.
+             * Иначе после одного Skip он слишком долго не может повторить отрыв,
+             * а быстрый melee-враг снова догоняет.
+             */
+            nextEmergencyRetreatTick = Find.TickManager.TicksGame + Rand.RangeInclusive(240, 360);
             nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupShort + 90;
 
             Log.Message("[Signal Interceptor] Psycaster emergency-retreat Skip self to "
                         + retreatCell
                         + " | HP=" + snap.casterHpFraction.ToString("F2")
                         + " | enemies=" + snap.enemies.Count
-                        + " | adjacent=" + adjacentCount);
+                        + " | adjacent=" + adjacentCount
+                        + " | closeMelee=" + closeMeleeOrAnimals
+                        + " | veryCloseMelee=" + veryCloseMeleeOrAnimals);
 
             return true;
         }
@@ -1086,6 +1726,143 @@ namespace SignalInterceptor.AI.Psycaster
             killContractEscapeUntilTick = -1;
         }
 
+        private bool TryFindRecoverySkipCell(BattlefieldSnapshot snap, out IntVec3 result)
+        {
+            result = IntVec3.Invalid;
+
+            if (snap == null || caster == null || caster.Map == null)
+                return false;
+
+            Map map = caster.Map;
+
+            IntVec3 best = IntVec3.Invalid;
+            float bestScore = float.MinValue;
+
+            /*
+             * Skip имеет ограниченную дальность, поэтому ищем клетку
+             * в пределах PsycasterTuning.SkipRangeMax.
+             */
+            int searchRadius = Mathf.FloorToInt(PsycasterTuning.SkipRangeMax);
+
+            for (int i = 0; i < 180; i++)
+            {
+                IntVec3 cell;
+
+                if (!CellFinder.TryFindRandomCellNear(
+                    caster.Position,
+                    map,
+                    searchRadius,
+                    c => c.InBounds(map)
+                         && c.Standable(map)
+                         && c.GetFirstPawn(map) == null
+                         && c.DistanceToEdge(map) >= 8
+                         && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
+                    out cell))
+                {
+                    continue;
+                }
+
+                float distFromCaster = cell.DistanceTo(caster.Position);
+
+                if (distFromCaster < 10f)
+                    continue;
+
+                float nearestMeleeOrAnimal = 999f;
+                float nearestAnyEnemy = 999f;
+                float nearestRangedLos = 999f;
+                int visibleShooters = 0;
+
+                if (snap.enemies != null)
+                {
+                    for (int eIndex = 0; eIndex < snap.enemies.Count; eIndex++)
+                    {
+                        EnemyAssessment e = snap.enemies[eIndex];
+
+                        if (e == null || e.pawn == null)
+                            continue;
+
+                        if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != map)
+                            continue;
+
+                        float ed = cell.DistanceTo(e.pawn.Position);
+
+                        if (ed < nearestAnyEnemy)
+                            nearestAnyEnemy = ed;
+
+                        if (e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp)
+                        {
+                            if (ed < nearestMeleeOrAnimal)
+                                nearestMeleeOrAnimal = ed;
+                        }
+
+                        if (e.IsRanged && GenSight.LineOfSight(e.pawn.Position, cell, map))
+                        {
+                            visibleShooters++;
+
+                            if (ed < nearestRangedLos)
+                                nearestRangedLos = ed;
+                        }
+                    }
+                }
+
+                /*
+                 * Для recovery-skip клетка должна реально рвать контакт.
+                 */
+                if (nearestMeleeOrAnimal < 18f)
+                    continue;
+
+                if (nearestAnyEnemy < 14f)
+                    continue;
+
+                float score = 0f;
+
+                score += nearestMeleeOrAnimal * 3.2f;
+                score += nearestAnyEnemy * 1.4f;
+                score += distFromCaster * 0.4f;
+
+                score -= visibleShooters * 25f;
+
+                if (nearestRangedLos < 24f)
+                    score -= (24f - nearestRangedLos) * 5f;
+
+                /*
+                 * Не улетаем слишком далеко от якоря сайта.
+                 */
+                if (HomeAnchor.IsValid)
+                {
+                    float homeDist = cell.DistanceTo(HomeAnchor);
+
+                    if (homeDist > MaxHomeDistance)
+                        score -= 120f;
+                }
+
+                /*
+                 * Предпочитаем клетки, которые не находятся прямо между кастером и ближайшим врагом.
+                 * Грубая эвристика: если клетка ближе к врагам, чем текущая позиция, она плохая.
+                 */
+                if (snap.topThreat != null && snap.topThreat.pawn != null)
+                {
+                    float currentThreatDist = caster.Position.DistanceTo(snap.topThreat.pawn.Position);
+                    float cellThreatDist = cell.DistanceTo(snap.topThreat.pawn.Position);
+
+                    if (cellThreatDist < currentThreatDist)
+                        score -= 40f;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = cell;
+                }
+            }
+
+            if (!best.IsValid)
+                return false;
+
+            result = best;
+            return true;
+        }
+
         private EnemyAssessment FindKillContractAssessment(BattlefieldSnapshot snap)
         {
             if (snap == null || snap.enemies == null)
@@ -1160,146 +1937,6 @@ namespace SignalInterceptor.AI.Psycaster
 
 
             killContractLastDistance = d;
-        }
-
-        private bool TryFindEmergencyRetreatCell(BattlefieldSnapshot snap, out IntVec3 result)
-        {
-            result = IntVec3.Invalid;
-
-            if (snap == null || caster == null || caster.Map == null || snap.topThreat == null || snap.topThreat.pawn == null)
-                return false;
-
-            Map map = caster.Map;
-            Pawn threat = snap.topThreat.pawn;
-
-            IntVec3 best = IntVec3.Invalid;
-            float bestScore = float.MinValue;
-
-            /*
-             * Было 80 попыток. Увеличиваем до 140, потому что теперь фильтр
-             * строже: клетка должна быть безопасна не только от topThreat,
-             * но и от животных/melee.
-             */
-            for (int i = 0; i < 140; i++)
-            {
-                IntVec3 cell;
-
-                if (!CellFinder.TryFindRandomCellNear(
-                    caster.Position,
-                    map,
-                    26,
-                    c => c.InBounds(map)
-                         && c.Standable(map)
-                         && c.GetFirstPawn(map) == null
-                         && c.DistanceToEdge(map) >= 8
-                         && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
-                    out cell))
-                {
-                    continue;
-                }
-
-                float distFromCaster = cell.DistanceTo(caster.Position);
-                float distFromThreat = cell.DistanceTo(threat.Position);
-
-                // Нет смысла "отступать" на 2-3 клетки.
-                if (distFromCaster < 8f)
-                    continue;
-
-                /*
-                 * Базовый запрет: не выбирать клетку совсем рядом с главной угрозой.
-                 * Для животных и melee ниже будет ещё более строгая проверка.
-                 */
-                if (distFromThreat < 12f)
-                    continue;
-
-                float nearestMeleeOrAnimal = 999f;
-                float nearestRangedLos = 999f;
-                int visibleShooters = 0;
-
-                if (snap.enemies != null)
-                {
-                    for (int eIndex = 0; eIndex < snap.enemies.Count; eIndex++)
-                    {
-                        EnemyAssessment e = snap.enemies[eIndex];
-
-                        if (e == null || e.pawn == null)
-                            continue;
-
-                        if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != map)
-                            continue;
-
-                        float ed = cell.DistanceTo(e.pawn.Position);
-
-                        /*
-                         * Животные в SnapshotBuilder считаются Animal, а не Ranged.
-                         * Поэтому отдельно держим от них дистанцию.
-                         */
-                        if (e.IsAnimal || e.IsMelee)
-                        {
-                            if (ed < nearestMeleeOrAnimal)
-                                nearestMeleeOrAnimal = ed;
-                        }
-
-                        if (e.IsRanged && GenSight.LineOfSight(e.pawn.Position, cell, map))
-                        {
-                            visibleShooters++;
-
-                            if (ed < nearestRangedLos)
-                                nearestRangedLos = ed;
-                        }
-                    }
-                }
-
-                /*
-                 * Ключевой фикс:
-                 * recovery-клетка не должна быть в зоне быстрого повторного контакта
-                 * с животным или melee-врагом.
-                 */
-                if (nearestMeleeOrAnimal < 16f)
-                    continue;
-
-                float score = 0f;
-
-                // Чем дальше от главной угрозы — тем лучше.
-                score += distFromThreat * 2.0f;
-
-                // Чем дальше от ближайшего животного/melee — тем лучше.
-                if (nearestMeleeOrAnimal < 999f)
-                    score += nearestMeleeOrAnimal * 2.5f;
-
-                // Слишком много стрелков видят клетку — плохо.
-                score -= visibleShooters * 22f;
-
-                // Если ближайший стрелок с LOS всё ещё слишком близко — штраф.
-                if (nearestRangedLos < 24f)
-                    score -= (24f - nearestRangedLos) * 4f;
-
-                // Небольшой бонус за реальное перемещение.
-                score += distFromCaster * 0.25f;
-
-                /*
-                 * Не уводим VIP слишком далеко от якоря сайта.
-                 */
-                if (HomeAnchor.IsValid)
-                {
-                    float homeDist = cell.DistanceTo(HomeAnchor);
-
-                    if (homeDist > MaxHomeDistance)
-                        score -= 100f;
-                }
-
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    best = cell;
-                }
-            }
-
-            if (!best.IsValid)
-                return false;
-
-            result = best;
-            return true;
         }
 
         private void ActionSelectAndExecute(BattlefieldSnapshot snap)
