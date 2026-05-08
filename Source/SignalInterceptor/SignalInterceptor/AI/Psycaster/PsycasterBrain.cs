@@ -63,6 +63,18 @@ namespace SignalInterceptor.AI.Psycaster
         private int nextEmergencyRetreatTick = -1;
         private int nextDownedExecutionScanTick = -1;
 
+        private int nextSoftLeashReturnTick = -1;
+
+        private const int MapEdgeDangerDistance = 10;
+
+        private const float SoftHomeFreeRadius = 45f;
+        private const float SoftHomeSoftRadius = 70f;
+        private const float SoftHomeHardRadius = 95f;
+
+        private const int SoftLeashReturnCooldownTicks = 240;
+        private const int SoftLeashReturnJobExpiryMin = 160;
+        private const int SoftLeashReturnJobExpiryMax = 240;
+
         private readonly List<IAbilityScorer> scorers = new List<IAbilityScorer>();
 
         /// <summary>
@@ -134,40 +146,24 @@ namespace SignalInterceptor.AI.Psycaster
             if (caster.Map == null)
                 return;
 
+            /*
+             * Абсолютный приоритет:
+             * если горит — тушим сразу, не спорим с leash/recovery/combat.
+             */
             if (TryExtinguishSelfWithWaterskip())
                 return;
 
             int now = Find.TickManager.TicksGame;
 
+            /*
+             * Если RimWorld/другой AI выдал job на выход с карты,
+             * мы не даём VIP реально покинуть сайт.
+             *
+             * Важно: этот метод НЕ должен жёстко тащить VIP в одну точку.
+             * Он только отменяет exit-job и выбирает безопасную внутреннюю клетку.
+             */
             if (TryStopLeavingMapJob())
                 return;
-
-
-            if (HomeAnchor.IsValid)
-            {
-                float homeDist = caster.Position.DistanceTo(HomeAnchor);
-
-                // ВАЖНО:
-                // если активен kill-contract, anchor не должен ломать добивание цели.
-                // Старое MaxHomeDistance=85 слишком часто рвало бой на 86-88 клетках.
-                float allowedHomeDistance = HasActiveKillContract ? 130f : MaxHomeDistance;
-
-                if (homeDist > allowedHomeDistance)
-                {
-                    Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
-                    goHome.locomotionUrgency = LocomotionUrgency.Sprint;
-                    caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
-
-                    nextActionSelectTick = Find.TickManager.TicksGame + 90;
-
-                    Log.Message("[Signal Interceptor] Psycaster too far from anchor (d="
-                                + homeDist.ToString("F1") + "), returning home " + HomeAnchor
-                                + " | allowed=" + allowedHomeDistance.ToString("F0")
-                                + " | contract=" + HasActiveKillContract);
-
-                    return;
-                }
-            }
 
             if (Find.TickManager.TicksGame % PsycasterTuning.NoFleeRefreshTicks == 0)
             {
@@ -192,9 +188,32 @@ namespace SignalInterceptor.AI.Psycaster
 
             BattlefieldSnapshot snap = SnapshotBuilder.Build(this);
             LastSnapshot = snap;
+
             UpdateKillContractTelemetry(snap);
 
+            /*
+             * Сначала recovery.
+             *
+             * Причина:
+             * если VIP ранен и его догоняет животное/милишник,
+             * нельзя заставлять его возвращаться к HomeAnchor.
+             * Сначала выживание, потом мягкий leash.
+             */
             if (TryRunRecoveryLogic(snap))
+                return;
+
+            /*
+             * Мягкий leash после recovery.
+             *
+             * Важное отличие от старой логики:
+             * здесь нет "если дальше MaxHomeDistance — немедленно прервать job и бежать в anchor".
+             * Возврат происходит только если:
+             * - VIP далеко;
+             * - нет немедленной угрозы;
+             * - cooldown leash-а прошёл;
+             * - он свободен для нового решения.
+             */
+            if (TryRunSoftLeashReturn(snap))
                 return;
 
             if (!snap.HasEnemies)
@@ -212,8 +231,10 @@ namespace SignalInterceptor.AI.Psycaster
                 return;
             }
 
-            // Emergency escape имеет приоритет над pending-melee.
-            // Если он реально почти умер — пусть оторвётся, а не самоубивается в дуэли.
+            /*
+             * Emergency escape имеет приоритет над pending-melee.
+             * Если он реально почти умер — пусть оторвётся, а не самоубивается в дуэли.
+             */
             if (IsCasterFreeToAct() && TryEmergencyRetreat(snap))
                 return;
 
@@ -257,6 +278,7 @@ namespace SignalInterceptor.AI.Psycaster
                     PsycasterTuning.ActionSelectMaxTicks);
             }
         }
+
 
         /// <summary>
         /// Свободна ли пешка для нового решения. Не дёргаем её, если сейчас кастует/атакует.
@@ -310,71 +332,65 @@ namespace SignalInterceptor.AI.Psycaster
             if (!leaving)
                 return false;
 
+            Map map = caster.Map;
+
             caster.jobs.EndCurrentJob(JobCondition.InterruptForced, true, true);
 
             BattlefieldSnapshot snap = SnapshotBuilder.Build(this);
             LastSnapshot = snap;
 
-            Pawn target = null;
+            IntVec3 safeCell;
 
-            if (snap != null && snap.topThreat != null)
-                target = snap.topThreat.pawn;
-
-            if (target == null && caster.Map != null)
+            /*
+             * Важный фикс:
+             * если он попытался выйти с карты, НЕ заставляем его идти строго в HomeAnchor.
+             * Иначе будет stagger: edge -> anchor -> threat -> edge -> anchor.
+             *
+             * Вместо этого ищем безопасную внутреннюю клетку:
+             * - не у края;
+             * - по возможности ближе к HomeAnchor;
+             * - не в пасти у животного/милишника;
+             * - не под прямым LOS стрелков.
+             */
+            if (TryFindSoftLeashReturnCell(snap, out safeCell))
             {
-                IReadOnlyList<Pawn> pawns = caster.Map.mapPawns.AllPawnsSpawned;
+                Job goSafe = JobMaker.MakeJob(JobDefOf.Goto, safeCell);
+                goSafe.locomotionUrgency = LocomotionUrgency.Sprint;
+                goSafe.expiryInterval = Rand.RangeInclusive(SoftLeashReturnJobExpiryMin, SoftLeashReturnJobExpiryMax);
 
-                float bestDist = float.MaxValue;
+                caster.jobs.StartJob(goSafe, JobCondition.InterruptForced);
 
-                for (int i = 0; i < pawns.Count; i++)
-                {
-                    Pawn p = pawns[i];
+                nextSoftLeashReturnTick = Find.TickManager.TicksGame + SoftLeashReturnCooldownTicks;
+                nextActionSelectTick = Find.TickManager.TicksGame + 90;
+                nextStanceReevalTick = Find.TickManager.TicksGame + 90;
 
-                    if (p == null || p.Destroyed || p.Dead || p.Downed || !p.Spawned)
-                        continue;
-
-                    if (p.Faction != Faction.OfPlayer)
-                        continue;
-
-                    float d = caster.Position.DistanceTo(p.Position);
-
-                    if (d < bestDist)
-                    {
-                        bestDist = d;
-                        target = p;
-                    }
-                }
-            }
-
-            if (target != null)
-            {
-                gc.InterruptBadPsycasterCombatJob_Public(caster, target);
-                gc.TryForcePsycasterMeleeAttack_Public(caster, target);
-
-                StartKillContract(target, 600, "PreventExitMap");
-
-                nextActionSelectTick = Find.TickManager.TicksGame + 30;
-                nextStanceReevalTick = Find.TickManager.TicksGame + 30;
-
-                Log.Message("[Signal Interceptor] Psycaster tried to leave map; forced back into combat. "
+                Log.Message("[Signal Interceptor] Psycaster tried to leave map; redirected to safe inner cell. "
                             + "Pawn=" + caster.LabelShort
                             + " | OldJob=" + defName
-                            + " | Target=" + target.LabelShort);
+                            + " | Cell=" + safeCell
+                            + " | HomeAnchor=" + HomeAnchor);
 
                 return true;
             }
 
-            if (HomeAnchor.IsValid)
+            /*
+             * Fallback:
+             * если нормальную клетку найти не удалось, идём в HomeAnchor,
+             * но только если он валиден и не находится у края карты.
+             */
+            if (HomeAnchor.IsValid && !IsNearMapEdge(HomeAnchor, map, MapEdgeDangerDistance))
             {
                 Job goHome = JobMaker.MakeJob(JobDefOf.Goto, HomeAnchor);
                 goHome.locomotionUrgency = LocomotionUrgency.Sprint;
-                goHome.expiryInterval = Rand.RangeInclusive(120, 180);
+                goHome.expiryInterval = Rand.RangeInclusive(SoftLeashReturnJobExpiryMin, SoftLeashReturnJobExpiryMax);
 
                 caster.jobs.StartJob(goHome, JobCondition.InterruptForced);
 
-                nextActionSelectTick = Find.TickManager.TicksGame + 60;
+                nextSoftLeashReturnTick = Find.TickManager.TicksGame + SoftLeashReturnCooldownTicks;
+                nextActionSelectTick = Find.TickManager.TicksGame + 90;
+                nextStanceReevalTick = Find.TickManager.TicksGame + 90;
 
-                Log.Message("[Signal Interceptor] Psycaster tried to leave map; returning to anchor. "
+                Log.Message("[Signal Interceptor] Psycaster tried to leave map; returning to anchor fallback. "
                             + "Pawn=" + caster.LabelShort
                             + " | OldJob=" + defName
                             + " | Anchor=" + HomeAnchor);
@@ -382,10 +398,241 @@ namespace SignalInterceptor.AI.Psycaster
                 return true;
             }
 
-            Log.Message("[Signal Interceptor] Psycaster tried to leave map; job cancelled. "
+            /*
+             * Последний fallback:
+             * job выхода отменён, но нового job нет.
+             * Это всё равно лучше, чем дать VIP уйти с карты.
+             */
+            nextSoftLeashReturnTick = Find.TickManager.TicksGame + SoftLeashReturnCooldownTicks;
+            nextActionSelectTick = Find.TickManager.TicksGame + 60;
+
+            Log.Message("[Signal Interceptor] Psycaster tried to leave map; exit job cancelled without safe fallback. "
                         + "Pawn=" + caster.LabelShort
                         + " | OldJob=" + defName);
 
+            return true;
+        }
+
+        private bool TryRunSoftLeashReturn(BattlefieldSnapshot snap)
+        {
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned || caster.Map == null)
+                return false;
+
+            if (!HomeAnchor.IsValid)
+                return false;
+
+            int now = Find.TickManager.TicksGame;
+
+            if (now < nextSoftLeashReturnTick)
+                return false;
+
+            if (!IsCasterFreeToAct())
+                return false;
+
+            Map map = caster.Map;
+
+            float homeDist = caster.Position.DistanceTo(HomeAnchor);
+
+            /*
+             * Если он не слишком далеко и не у края карты — leash не нужен.
+             */
+            if (homeDist < SoftHomeSoftRadius && !IsNearMapEdge(caster.Position, map, MapEdgeDangerDistance + 4))
+                return false;
+
+            /*
+             * Не возвращаем насильно, если есть непосредственная угроза.
+             * Иначе он будет умирать из-за leash-а.
+             *
+             * Исключение: если он уже у края карты — можно мягко увести внутрь,
+             * но всё равно не в одну фиксированную точку.
+             */
+            bool nearEdge = IsNearMapEdge(caster.Position, map, MapEdgeDangerDistance + 4);
+            bool immediateDanger = HasImmediateLeashDanger(snap);
+
+            if (immediateDanger && !nearEdge && homeDist < SoftHomeHardRadius)
+                return false;
+
+            /*
+             * Если текущий Goto уже ведёт в нормальную внутреннюю клетку,
+             * не прерываем его, чтобы не создавать stagger.
+             */
+            Job curJob = caster.CurJob;
+
+            if (curJob != null && curJob.def == JobDefOf.Goto && curJob.targetA.IsValid)
+            {
+                IntVec3 targetCell = curJob.targetA.Cell;
+
+                if (targetCell.IsValid &&
+                    targetCell.InBounds(map) &&
+                    !IsNearMapEdge(targetCell, map, MapEdgeDangerDistance) &&
+                    (!HomeAnchor.IsValid || targetCell.DistanceTo(HomeAnchor) < homeDist))
+                {
+                    return true;
+                }
+            }
+
+            IntVec3 returnCell;
+
+            if (!TryFindSoftLeashReturnCell(snap, out returnCell))
+                return false;
+
+            Job job = JobMaker.MakeJob(JobDefOf.Goto, returnCell);
+            job.locomotionUrgency = LocomotionUrgency.Sprint;
+            job.expiryInterval = Rand.RangeInclusive(SoftLeashReturnJobExpiryMin, SoftLeashReturnJobExpiryMax);
+
+            caster.jobs.StartJob(job, JobCondition.InterruptForced);
+
+            nextSoftLeashReturnTick = now + SoftLeashReturnCooldownTicks;
+            nextActionSelectTick = now + 120;
+            nextStanceReevalTick = now + 120;
+
+            Log.Message("[Signal Interceptor] Psycaster soft leash return: "
+                        + caster.LabelShort
+                        + " -> " + returnCell
+                        + " | homeDist=" + homeDist.ToString("F1")
+                        + " | nearEdge=" + nearEdge
+                        + " | immediateDanger=" + immediateDanger
+                        + " | anchor=" + HomeAnchor);
+
+            return true;
+        }
+
+        private bool TryFindSoftLeashReturnCell(BattlefieldSnapshot snap, out IntVec3 result)
+        {
+            result = IntVec3.Invalid;
+
+            if (caster == null || caster.Map == null)
+                return false;
+
+            Map map = caster.Map;
+
+            IntVec3 center = HomeAnchor.IsValid ? HomeAnchor : caster.Position;
+
+            IntVec3 best = IntVec3.Invalid;
+            float bestScore = float.MinValue;
+
+            /*
+             * Ищем не строго HomeAnchor, а хорошую внутреннюю клетку.
+             * Это снижает риск stagger-а и не заставляет VIP возвращаться в одну точку.
+             */
+            for (int i = 0; i < 180; i++)
+            {
+                IntVec3 cell;
+
+                bool found = CellFinder.TryFindRandomCellNear(
+                    center,
+                    map,
+                    32,
+                    c => c.InBounds(map)
+                         && c.Standable(map)
+                         && c.GetFirstPawn(map) == null
+                         && c.DistanceToEdge(map) >= MapEdgeDangerDistance
+                         && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
+                    out cell);
+
+                if (!found)
+                    continue;
+
+                float distFromCaster = cell.DistanceTo(caster.Position);
+
+                if (distFromCaster < 6f)
+                    continue;
+
+                float nearestAnyEnemy = 999f;
+                float nearestMeleeOrAnimal = 999f;
+                float nearestRangedLos = 999f;
+                int visibleShooters = 0;
+
+                if (snap != null && snap.enemies != null)
+                {
+                    for (int eIndex = 0; eIndex < snap.enemies.Count; eIndex++)
+                    {
+                        EnemyAssessment e = snap.enemies[eIndex];
+
+                        if (e == null || e.pawn == null)
+                            continue;
+
+                        if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != map)
+                            continue;
+
+                        float ed = cell.DistanceTo(e.pawn.Position);
+
+                        if (ed < nearestAnyEnemy)
+                            nearestAnyEnemy = ed;
+
+                        if (e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp)
+                        {
+                            if (ed < nearestMeleeOrAnimal)
+                                nearestMeleeOrAnimal = ed;
+                        }
+
+                        if (e.IsRanged && GenSight.LineOfSight(e.pawn.Position, cell, map))
+                        {
+                            visibleShooters++;
+
+                            if (ed < nearestRangedLos)
+                                nearestRangedLos = ed;
+                        }
+                    }
+                }
+
+                /*
+                 * Не возвращаем его в пасть милишнику/животному.
+                 */
+                if (nearestMeleeOrAnimal < 10f)
+                    continue;
+
+                if (nearestAnyEnemy < 8f)
+                    continue;
+
+                float score = 0f;
+
+                /*
+                 * Базовая цель leash-а — двигаться внутрь карты и ближе к HomeAnchor.
+                 */
+                if (HomeAnchor.IsValid)
+                {
+                    float homeDist = cell.DistanceTo(HomeAnchor);
+                    score -= homeDist * 1.8f;
+                }
+
+                score += cell.DistanceToEdge(map) * 1.5f;
+
+                /*
+                 * Но всё ещё учитываем угрозы.
+                 */
+                if (nearestMeleeOrAnimal < 999f)
+                    score += nearestMeleeOrAnimal * 2.4f;
+
+                if (nearestAnyEnemy < 999f)
+                    score += nearestAnyEnemy * 0.8f;
+
+                score -= visibleShooters * 20f;
+
+                if (nearestRangedLos < 24f)
+                    score -= (24f - nearestRangedLos) * 3.5f;
+
+                /*
+                 * Мягко штрафуем клетки, которые всё ещё слишком далеко от домашней области.
+                 */
+                score -= GetSoftHomePenalty(cell, false);
+
+                /*
+                 * Жёстко штрафуем edge.
+                 */
+                score -= GetMapEdgePenalty(cell, map);
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = cell;
+                }
+            }
+
+            if (!best.IsValid)
+                return false;
+
+            result = best;
             return true;
         }
 
@@ -1132,7 +1379,9 @@ namespace SignalInterceptor.AI.Psycaster
             IntVec3 best = IntVec3.Invalid;
             float bestScore = float.MinValue;
 
-            for (int i = 0; i < 180; i++)
+            float currentThreatDist = caster.Position.DistanceTo(threat.Position);
+
+            for (int i = 0; i < 220; i++)
             {
                 IntVec3 cell;
 
@@ -1143,7 +1392,7 @@ namespace SignalInterceptor.AI.Psycaster
                     c => c.InBounds(map)
                          && c.Standable(map)
                          && c.GetFirstPawn(map) == null
-                         && c.DistanceToEdge(map) >= 8
+                         && c.DistanceToEdge(map) >= MapEdgeDangerDistance
                          && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
                     out cell))
                 {
@@ -1157,6 +1406,13 @@ namespace SignalInterceptor.AI.Psycaster
                     continue;
 
                 if (distFromThreat < 14f)
+                    continue;
+
+                /*
+                 * Не выбираем клетку у края карты.
+                 * Это главный фикс против "убежал с сайта".
+                 */
+                if (IsNearMapEdge(cell, map, MapEdgeDangerDistance))
                     continue;
 
                 float nearestMeleeOrAnimal = 999f;
@@ -1198,8 +1454,7 @@ namespace SignalInterceptor.AI.Psycaster
                 }
 
                 /*
-                 * Для обычного recovery-Goto порог ниже, чем для Skip,
-                 * но всё равно не выбираем клетку почти в пасти у животного.
+                 * Emergency retreat всё равно не должен прыгать в пасть зверю.
                  */
                 if (nearestMeleeOrAnimal < 14f)
                     continue;
@@ -1209,38 +1464,57 @@ namespace SignalInterceptor.AI.Psycaster
 
                 float score = 0f;
 
-                score += distFromThreat * 2.0f;
+                /*
+                 * Основная цель emergency — выжить.
+                 */
+                score += distFromThreat * 2.2f;
 
                 if (nearestMeleeOrAnimal < 999f)
-                    score += nearestMeleeOrAnimal * 2.8f;
+                    score += nearestMeleeOrAnimal * 3.0f;
 
                 if (nearestAnyEnemy < 999f)
                     score += nearestAnyEnemy * 1.2f;
 
                 score += distFromCaster * 0.25f;
 
-                score -= visibleShooters * 22f;
+                /*
+                 * Не хотим вставать под стрелков.
+                 */
+                score -= visibleShooters * 24f;
 
                 if (nearestRangedLos < 24f)
-                    score -= (24f - nearestRangedLos) * 4f;
+                    score -= (24f - nearestRangedLos) * 4.0f;
 
-                if (HomeAnchor.IsValid)
-                {
-                    float homeDist = cell.DistanceTo(HomeAnchor);
+                /*
+                 * В emergency мягкий home-штраф слабее,
+                 * но он всё равно не даёт AI постепенно уводить VIP к краю карты.
+                 */
+                score -= GetSoftHomePenalty(cell, true);
 
-                    if (homeDist > MaxHomeDistance)
-                        score -= 120f;
-                }
+                /*
+                 * Edge penalty почти абсолютный.
+                 */
+                score -= GetMapEdgePenalty(cell, map);
 
                 /*
                  * Не выбираем клетку, которая приближает к topThreat.
-                 * Это важно, когда случайный Goto выбирает диагональ,
-                 * которую животное быстро перехватывает.
+                 * Для животного/милишника это особенно важно.
                  */
-                float currentThreatDist = caster.Position.DistanceTo(threat.Position);
-
                 if (distFromThreat < currentThreatDist)
-                    score -= 50f;
+                    score -= 60f;
+
+                /*
+                 * Если клетка ближе к HomeAnchor, это небольшой плюс.
+                 * Не жёсткий возврат, а мягкое предпочтение.
+                 */
+                if (HomeAnchor.IsValid)
+                {
+                    float currentHomeDist = caster.Position.DistanceTo(HomeAnchor);
+                    float newHomeDist = cell.DistanceTo(HomeAnchor);
+
+                    if (newHomeDist < currentHomeDist)
+                        score += 12f;
+                }
 
                 if (score > bestScore)
                 {
@@ -1261,13 +1535,47 @@ namespace SignalInterceptor.AI.Psycaster
             if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
                 return false;
 
-            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
-                return true;
-
             Map map = caster.Map;
 
             if (map == null)
                 return false;
+
+            /*
+             * Если текущий recovery-Goto ведёт к краю карты — это больше не safe.
+             */
+            Job curJob = caster.CurJob;
+
+            if (curJob != null && curJob.def == JobDefOf.Goto && curJob.targetA.IsValid)
+            {
+                IntVec3 targetCell = curJob.targetA.Cell;
+
+                if (targetCell.IsValid)
+                {
+                    if (IsNearMapEdge(targetCell, map, MapEdgeDangerDistance))
+                        return false;
+
+                    /*
+                     * Если target слишком далеко от HomeAnchor, не считаем этот Goto безопасным.
+                     * Это не жёсткая привязка — просто текущий retreat надо пересчитать.
+                     */
+                    if (HomeAnchor.IsValid)
+                    {
+                        float targetHomeDist = targetCell.DistanceTo(HomeAnchor);
+
+                        if (targetHomeDist > SoftHomeHardRadius)
+                            return false;
+                    }
+                }
+            }
+
+            /*
+             * Если он сам уже слишком близко к краю, текущая позиция небезопасна.
+             */
+            if (IsNearMapEdge(caster.Position, map, MapEdgeDangerDistance))
+                return false;
+
+            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
+                return true;
 
             for (int i = 0; i < snap.enemies.Count; i++)
             {
@@ -1284,7 +1592,7 @@ namespace SignalInterceptor.AI.Psycaster
                  * Если они снова подошли близко — текущий Goto больше не безопасен,
                  * надо пересчитать отступление.
                  */
-                if ((e.IsAnimal || e.IsMelee) && e.distanceToCaster < 14f)
+                if ((e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp) && e.distanceToCaster < 14f)
                     return false;
 
                 /*
@@ -1328,6 +1636,104 @@ namespace SignalInterceptor.AI.Psycaster
             return caster.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
                 .Any(h => h != null && h.Severity > 0f && h.BleedRate > 0.01f);
+        }
+
+        private bool IsNearMapEdge(IntVec3 cell, Map map, int edgeDistance)
+        {
+            if (map == null || !cell.IsValid || !cell.InBounds(map))
+                return true;
+
+            return cell.x < edgeDistance
+                   || cell.z < edgeDistance
+                   || cell.x >= map.Size.x - edgeDistance
+                   || cell.z >= map.Size.z - edgeDistance;
+        }
+
+        private float GetMapEdgePenalty(IntVec3 cell, Map map)
+        {
+            if (map == null || !cell.IsValid || !cell.InBounds(map))
+                return 10000f;
+
+            int edgeDist = cell.DistanceToEdge(map);
+
+            if (edgeDist < MapEdgeDangerDistance)
+                return 10000f;
+
+            /*
+             * В пределах 10-18 клеток от края — не абсолютный запрет,
+             * но сильный штраф, чтобы AI предпочитал внутренние клетки.
+             */
+            if (edgeDist < MapEdgeDangerDistance + 8)
+                return (MapEdgeDangerDistance + 8 - edgeDist) * 35f;
+
+            return 0f;
+        }
+
+        private float GetSoftHomePenalty(IntVec3 cell, bool emergency)
+        {
+            if (!HomeAnchor.IsValid || !cell.IsValid)
+                return 0f;
+
+            float dist = cell.DistanceTo(HomeAnchor);
+
+            if (dist <= SoftHomeFreeRadius)
+                return 0f;
+
+            if (dist <= SoftHomeSoftRadius)
+            {
+                float over = dist - SoftHomeFreeRadius;
+                return emergency ? over * 0.35f : over * 0.9f;
+            }
+
+            if (dist <= SoftHomeHardRadius)
+            {
+                float over = dist - SoftHomeSoftRadius;
+                return emergency ? 12f + over * 0.9f : 24f + over * 1.8f;
+            }
+
+            /*
+             * Очень далеко от домашней зоны.
+             * В emergency не запрещаем полностью, но делаем сильно нежелательным.
+             */
+            float hardOver = dist - SoftHomeHardRadius;
+
+            return emergency ? 70f + hardOver * 1.2f : 160f + hardOver * 3.0f;
+        }
+
+        private bool HasImmediateLeashDanger(BattlefieldSnapshot snap)
+        {
+            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
+                return false;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned)
+                    continue;
+
+                /*
+                 * Ближник/животное рядом — нельзя включать leash-return.
+                 */
+                if ((e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp) && e.distanceToCaster <= 12f)
+                    return true;
+
+                /*
+                 * Стрелок с LOS рядом — тоже нельзя заставлять идти домой.
+                 */
+                if (e.IsRanged && e.hasLineOfSight)
+                {
+                    float safeRange = e.weaponRange > 0f ? e.weaponRange + 2f : 24f;
+
+                    if (e.distanceToCaster <= safeRange)
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         private bool ShouldEnterRecoveryMode(BattlefieldSnapshot snap)
@@ -1950,33 +2356,35 @@ namespace SignalInterceptor.AI.Psycaster
             IntVec3 best = IntVec3.Invalid;
             float bestScore = float.MinValue;
 
-            /*
-             * Skip имеет ограниченную дальность, поэтому ищем клетку
-             * в пределах PsycasterTuning.SkipRangeMax.
-             */
-            int searchRadius = Mathf.FloorToInt(PsycasterTuning.SkipRangeMax);
+            int radius = Mathf.RoundToInt(PsycasterTuning.SkipRangeMax);
 
-            for (int i = 0; i < 180; i++)
+            for (int i = 0; i < 220; i++)
             {
                 IntVec3 cell;
 
-                if (!CellFinder.TryFindRandomCellNear(
+                bool found = CellFinder.TryFindRandomCellNear(
                     caster.Position,
                     map,
-                    searchRadius,
+                    radius,
                     c => c.InBounds(map)
                          && c.Standable(map)
                          && c.GetFirstPawn(map) == null
-                         && c.DistanceToEdge(map) >= 8
+                         && c.DistanceToEdge(map) >= MapEdgeDangerDistance
                          && caster.CanReach(c, PathEndMode.OnCell, Danger.Deadly),
-                    out cell))
-                {
+                    out cell);
+
+                if (!found)
                     continue;
-                }
 
                 float distFromCaster = cell.DistanceTo(caster.Position);
 
+                /*
+                 * Skip ради recovery должен реально отрывать дистанцию.
+                 */
                 if (distFromCaster < 10f)
+                    continue;
+
+                if (IsNearMapEdge(cell, map, MapEdgeDangerDistance))
                     continue;
 
                 float nearestMeleeOrAnimal = 999f;
@@ -2018,7 +2426,7 @@ namespace SignalInterceptor.AI.Psycaster
                 }
 
                 /*
-                 * Для recovery-skip клетка должна реально рвать контакт.
+                 * Recovery Skip должен создать пространство для регена.
                  */
                 if (nearestMeleeOrAnimal < 18f)
                     continue;
@@ -2028,37 +2436,44 @@ namespace SignalInterceptor.AI.Psycaster
 
                 float score = 0f;
 
-                score += nearestMeleeOrAnimal * 3.2f;
-                score += nearestAnyEnemy * 1.4f;
-                score += distFromCaster * 0.4f;
+                if (nearestMeleeOrAnimal < 999f)
+                    score += nearestMeleeOrAnimal * 3.4f;
 
-                score -= visibleShooters * 25f;
+                if (nearestAnyEnemy < 999f)
+                    score += nearestAnyEnemy * 1.5f;
 
-                if (nearestRangedLos < 24f)
-                    score -= (24f - nearestRangedLos) * 5f;
+                score += distFromCaster * 0.35f;
 
                 /*
-                 * Не улетаем слишком далеко от якоря сайта.
+                 * Не прыгать под стрелков.
+                 */
+                score -= visibleShooters * 28f;
+
+                if (nearestRangedLos < 26f)
+                    score -= (26f - nearestRangedLos) * 4.5f;
+
+                /*
+                 * Главное отличие от старой логики:
+                 * Skip не должен уводить VIP к краю карты.
+                 */
+                score -= GetMapEdgePenalty(cell, map);
+
+                /*
+                 * Мягкий leash: в emergency/recovery Skip можно уйти дальше,
+                 * но не бесконечно наружу.
+                 */
+                score -= GetSoftHomePenalty(cell, true);
+
+                /*
+                 * Если клетка хотя бы немного возвращает к HomeAnchor — это плюс.
                  */
                 if (HomeAnchor.IsValid)
                 {
-                    float homeDist = cell.DistanceTo(HomeAnchor);
+                    float currentHomeDist = caster.Position.DistanceTo(HomeAnchor);
+                    float newHomeDist = cell.DistanceTo(HomeAnchor);
 
-                    if (homeDist > MaxHomeDistance)
-                        score -= 120f;
-                }
-
-                /*
-                 * Предпочитаем клетки, которые не находятся прямо между кастером и ближайшим врагом.
-                 * Грубая эвристика: если клетка ближе к врагам, чем текущая позиция, она плохая.
-                 */
-                if (snap.topThreat != null && snap.topThreat.pawn != null)
-                {
-                    float currentThreatDist = caster.Position.DistanceTo(snap.topThreat.pawn.Position);
-                    float cellThreatDist = cell.DistanceTo(snap.topThreat.pawn.Position);
-
-                    if (cellThreatDist < currentThreatDist)
-                        score -= 40f;
+                    if (newHomeDist < currentHomeDist)
+                        score += 14f;
                 }
 
                 if (score > bestScore)
