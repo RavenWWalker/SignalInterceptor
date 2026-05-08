@@ -4,7 +4,7 @@
   <HediffDef>
     <defName>SI_RestoringMechanisms</defName>
     <label>restoring archomechanites</label>
-    <description>Advanced archomechanites restore the psycaster's body after injury. Their main flaw is that the colony of mechanites cannot safely rebuild living tissue while the host is under direct trauma stress, so the effect becomes dormant for a short time after the pawn takes damage.\n\nHealing: +200%\n\nBleeding wound repair: +145%\n\nBlood loss recovery: +1.2% per sec.\n\nInactive after taking damage: 10 sec.</description>
+    <description>Advanced archomechanites restore the psycaster's body after injury. Their main flaw is that the colony of mechanites cannot safely rebuild living tissue while the host is under direct trauma stress, so the effect becomes dormant for a short time after the pawn takes damage.Can't resurrect the dead.\n\nHealing: +200%\n\nBleeding wound repair: +145%\n\nBlood loss recovery: +1.2% per sec.\n\nInactive after taking damage: 10 sec.</description>
     <hediffClass>HediffWithComps</hediffClass>
     <isBad>false</isBad>
     <tendable>false</tendable>

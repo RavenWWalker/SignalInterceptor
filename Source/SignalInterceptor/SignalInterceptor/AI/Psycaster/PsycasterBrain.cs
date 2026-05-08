@@ -432,77 +432,134 @@ namespace SignalInterceptor.AI.Psycaster
 
         private bool TryExecuteDownedPlayerPawn()
         {
-            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned || caster.Map == null)
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
                 return false;
-
-            if (!IsCasterFreeToAct())
-                return true;
-
-            int now = Find.TickManager.TicksGame;
-
-            if (now < nextDownedExecutionScanTick)
-                return true;
-
-            nextDownedExecutionScanTick = now + Rand.RangeInclusive(60, 90);
 
             Map map = caster.Map;
 
+            if (map == null)
+                return false;
+
+            int now = Find.TickManager.TicksGame;
+
+            /*
+             * Если уже выполняется AttackMelee по упавшей пешке игрока —
+             * НЕ перезапускаем job каждый тик.
+             * Просто даём текущей работе продолжаться.
+             */
+            Job curJob = caster.CurJob;
+
+            if (curJob != null &&
+                curJob.def == JobDefOf.AttackMelee &&
+                curJob.targetA.HasThing)
+            {
+                Pawn currentTarget = curJob.targetA.Thing as Pawn;
+
+                if (currentTarget != null &&
+                    currentTarget.Spawned &&
+                    currentTarget.Map == map &&
+                    currentTarget.Faction == Faction.OfPlayer &&
+                    currentTarget.Downed &&
+                    !currentTarget.Dead &&
+                    !currentTarget.Destroyed)
+                {
+                    return true;
+                }
+            }
+
+            if (now < nextDownedExecutionScanTick)
+                return false;
+
+            nextDownedExecutionScanTick = now + 30;
+
+            if (!IsCasterFreeToAct())
+                return false;
+
             Pawn target = null;
-            float bestDist = float.MaxValue;
+            float bestScore = float.MinValue;
 
             IReadOnlyList<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
 
             for (int i = 0; i < pawns.Count; i++)
             {
-                Pawn p = pawns[i];
+                Pawn pawn = pawns[i];
 
-                if (p == null || p.Destroyed || p.Dead || !p.Spawned || p.Map != map)
+                if (pawn == null || pawn.Destroyed || pawn.Dead || !pawn.Spawned)
                     continue;
 
-                if (p.Faction != Faction.OfPlayer)
+                if (pawn.Faction != Faction.OfPlayer)
                     continue;
 
-                if (!p.Downed)
+                if (!pawn.Downed)
                     continue;
 
-                if (p.IsPrisoner)
+                if (!pawn.Position.InBounds(map))
                     continue;
 
-                float d = caster.Position.DistanceTo(p.Position);
+                float distance = caster.Position.DistanceTo(pawn.Position);
 
-                if (d < bestDist)
+                /*
+                 * Не надо бежать через всю карту ради казни.
+                 * Если нужно агрессивнее — можно поднять до 35-45.
+                 */
+                if (distance > 28f)
+                    continue;
+
+                if (!caster.CanReach(pawn, PathEndMode.Touch, Danger.Deadly))
+                    continue;
+
+                float score = 100f - distance;
+
+                /*
+                 * Почти мёртвых добивать приоритетнее.
+                 */
+                if (pawn.health != null && pawn.health.summaryHealth != null)
                 {
-                    bestDist = d;
-                    target = p;
+                    score += (1f - pawn.health.summaryHealth.SummaryHealthPercent) * 25f;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    target = pawn;
                 }
             }
 
             if (target == null)
                 return false;
 
-            Job curJob = caster.CurJob;
+            float d = caster.Position.DistanceTo(target.Position);
 
-            if (curJob != null &&
-                curJob.def == JobDefOf.AttackMelee &&
-                curJob.targetA.Thing == target)
-            {
-                return true;
-            }
+            Log.Message("[Signal Interceptor] Psycaster executing downed pawn: " +
+                        target.LabelShort +
+                        " | d=" + d.ToString("F1"));
 
+            /*
+             * Выдаём именно AttackMelee.
+             * Важно: не Wander, не Goto, не Cast, а нормальную melee-атаку по downed pawn.
+             */
             Job job = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
-            job.expiryInterval = Rand.RangeInclusive(240, 360);
+            job.locomotionUrgency = LocomotionUrgency.Sprint;
+            job.expiryInterval = 180;
             job.checkOverrideOnExpire = true;
-            job.playerForced = true;
+            job.killIncappedTarget = true;
+            job.maxNumMeleeAttacks = 1;
 
-            caster.jobs.StartJob(job, JobCondition.InterruptForced);
+            caster.jobs.StartJob(
+                job,
+                JobCondition.InterruptForced,
+                null,
+                resumeCurJobAfterwards: false,
+                cancelBusyStances: true
+            );
 
-            Log.Message("[Signal Interceptor] Psycaster executing downed pawn: "
-                        + target.LabelShort
-                        + " | d=" + bestDist.ToString("F1"));
+            /*
+             * Небольшая задержка, чтобы не перезапускать приказ сразу же.
+             */
+            nextDownedExecutionScanTick = now + 60;
 
             return true;
         }
-
 
         private bool TryRunRecoveryLogic(BattlefieldSnapshot snap)
         {

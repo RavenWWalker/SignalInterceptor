@@ -4,8 +4,11 @@ namespace SignalInterceptor.AI.Psycaster
 {
     /// <summary>
     /// ChaosSkip — телепорт врага в СЛУЧАЙНУЮ клетку.
-    /// Тактика: сбросить ближника, который догоняет, либо растащить плотную группу
-    /// в Survive/Disengage. Дешевле Skip, не требует destination.
+    ///
+    /// ВАЖНО:
+    /// - не использовать против единственного melee-врага в дуэли;
+    /// - не использовать по цели kill-contract, если это не настоящая паника;
+    /// - не ломать melee-commit случайным отбрасыванием цели.
     /// </summary>
     public class Scorer_ChaosSkip : AbilityScorerBase
     {
@@ -36,6 +39,8 @@ namespace SignalInterceptor.AI.Psycaster
             EnemyAssessment best = null;
             float bestRaw = 0f;
 
+            bool singleEnemy = snap.enemies.Count == 1;
+
             bool panicState =
                 brain.CurrentStance == PsycasterStance.Engulfed ||
                 brain.CurrentStance == PsycasterStance.Survive;
@@ -53,13 +58,47 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.distanceToCaster > PsycasterTuning.ChaosSkipMaxDistance)
                     continue;
 
-                // КЛЮЧЕВАЯ ПРАВКА:
-                // В Kite нельзя ChaosSkip'ать стрелков/снайперов.
-                // Это телепортирует их в случайную клетку и ломает план "притянуть -> оглушить -> зарезать".
+                /*
+                 * ГЛАВНЫЙ ФИКС:
+                 * В дуэли 1 на 1 против ближника ChaosSkip почти всегда вреден.
+                 * Он случайно отбрасывает цель и ломает собственный melee-commit.
+                 *
+                 * Разрешаем только в настоящей панике и только если цель уже вплотную.
+                 */
+                if (singleEnemy && e.IsMelee)
+                {
+                    if (!panicState)
+                        continue;
+
+                    if (e.distanceToCaster > 1.6f)
+                        continue;
+                }
+
+                /*
+                 * Если цель уже является kill-contract целью, не надо её случайно
+                 * отбрасывать. Пси-кастер уже решил её зарезать.
+                 */
+                if (brain.IsKillContractTarget(e.pawn) && !panicState)
+                    continue;
+
+                /*
+                 * В обычном состоянии ChaosSkip по melee допустим только как
+                 * короткий emergency-сброс, когда враг реально рядом.
+                 */
+                if (e.IsMelee && !panicState && e.distanceToCaster > 2.5f)
+                    continue;
+
+                /*
+                 * В Kite нельзя ChaosSkip'ать стрелков/снайперов.
+                 * Это телепортирует их в случайную клетку и ломает план
+                 * "притянуть -> оглушить -> зарезать".
+                 */
                 if (e.IsRanged && !panicState)
                     continue;
 
-                // В панике можно ChaosSkip'нуть дальника только если он уже почти вплотную.
+                /*
+                 * В панике можно ChaosSkip'нуть дальника только если он уже почти вплотную.
+                 */
                 if (e.IsRanged && panicState && e.distanceToCaster > 2.5f)
                     continue;
 
@@ -71,17 +110,23 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.IsAnimal)
                     raw *= 1.4f;
 
-                if (e.distanceToCaster <= 2.5f)
-                    raw *= 1.5f;
-                else if (e.distanceToCaster <= 4f)
-                    raw *= 1.25f;
+                if (e.distanceToCaster <= 1.6f)
+                    raw *= 1.6f;
+                else if (e.distanceToCaster <= 2.5f)
+                    raw *= 1.3f;
 
                 if (panicState)
                     raw *= 1.4f;
 
-                // В обычном Kite это только emergency-сброс ближника, не ротационная способность.
                 if (brain.CurrentStance == PsycasterStance.Kite)
                     raw *= 0.65f;
+
+                /*
+                 * Даже в panic state одиночную melee-цель не надо делать
+                 * приоритетнее нормального Stun/melee, если ситуация не критическая.
+                 */
+                if (singleEnemy && e.IsMelee)
+                    raw *= 0.45f;
 
                 if (raw > bestRaw)
                 {
@@ -101,7 +146,10 @@ namespace SignalInterceptor.AI.Psycaster
             action.score = bestRaw;
             action.debugReason = "ChaosSkip emergency " + best.pawn.LabelShort
                                  + " (role=" + best.role
-                                 + ", d=" + best.distanceToCaster.ToString("F1") + ")";
+                                 + ", d=" + best.distanceToCaster.ToString("F1")
+                                 + ", single=" + singleEnemy
+                                 + ", panic=" + panicState
+                                 + ")";
 
             return action;
         }

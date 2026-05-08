@@ -59,7 +59,12 @@ namespace SignalInterceptor.AI.Psycaster
                 if (e.IsMechanoid)
                     continue;
 
-                if (e.role == EnemyRole.Wimp)
+                /*
+                 * Wimp обычно не приоритетная цель для Stun.
+                 * Но если это единственный враг или он уже близко — Stun нужен,
+                 * чтобы закрепить melee-дуэль и добить цель.
+                 */
+                if (e.role == EnemyRole.Wimp && !singleEnemy && e.distanceToCaster > 3.5f)
                     continue;
 
                 // ГЛАВНЫЙ ФИКС:
