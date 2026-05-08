@@ -1635,7 +1635,11 @@ namespace SignalInterceptor
                     );
 
                 case VIPSubtype.PsycasterVIP:
-                    return FormatKeyed("SI_VIP_Desc_Psycaster", workerName);
+                    return FormatKeyed(
+                        "SI_VIP_Desc_Psycaster",
+                        workerName,
+                        psycasterThreatDesc
+                    );
 
                 case VIPSubtype.MechanitorSignalVIP:
                     return FormatKeyed("SI_VIP_Desc_MechanitorSignal", workerName);

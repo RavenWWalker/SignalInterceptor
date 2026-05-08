@@ -80,18 +80,18 @@
   <SI_DoppelgangerFaction_Starjack.leaderTitle>лидер</SI_DoppelgangerFaction_Starjack.leaderTitle>
   <SI_DoppelgangerFaction_Starjack.leaderTitleFemale>лидер</SI_DoppelgangerFaction_Starjack.leaderTitleFemale>
 
-<SI_RogueMechanitorFaction.label>заблудший механитор</SI_RogueMechanitorFaction.label>
+  <SI_RogueMechanitorFaction.label>заблудший механитор</SI_RogueMechanitorFaction.label>
+  <SI_RogueMechanitorFaction.description>Одинокий механитор, долгое время существующий вдали от поселений и известных маршрутов. Его присутствие выдаёт не голос, не имя и не просьба о помощи, а искажённый поток команд, заполняющий радиоэфир помехами и обрывками почти человеческих интонаций.\n\nНикто не знает, кем он был раньше: изгнанником, выжившим после катастрофы, беглым исследователем или тем, кто слишком долго слушал машины и однажды начал отвечать им на их языке. Его тело усилено имплантами механитора, а вокруг него движется группа боевых механоидов, подчиняющихся не приказам фракции, а личной сети контроля.\n\nТакие механиторы редко не вступают в переговоры. Они постоянно перемещаются, избегают длительных стоянок и реагируют на приближение чужаков как на угрозу. Возможно, в нём ещё осталась человеческая воля, и именно она делает его опаснее обычного механоидного узла.</SI_RogueMechanitorFaction.description>
+  <SI_RogueMechanitorFaction.pawnSingular>механитор</SI_RogueMechanitorFaction.pawnSingular>
+  <SI_RogueMechanitorFaction.pawnsPlural>механиторы</SI_RogueMechanitorFaction.pawnsPlural>
+  <SI_RogueMechanitorFaction.leaderTitle>механитор</SI_RogueMechanitorFaction.leaderTitle>
+  <SI_RogueMechanitorFaction.leaderTitleFemale>механитор</SI_RogueMechanitorFaction.leaderTitleFemale>
 
-<SI_RogueMechanitorFaction.description>Одинокий механитор, долгое время существующий вдали от поселений и известных маршрутов. Его присутствие выдаёт не голос, не имя и не просьба о помощи, а искажённый поток команд, заполняющий радиоэфир помехами и обрывками почти человеческих интонаций. 
-Никто не знает, кем он был раньше: изгнанником, выжившим после катастрофы, беглым исследователем или тем, кто слишком долго слушал машины и однажды начал отвечать им на их языке. Его тело усилено имплантами механитора, а вокруг него движется группа боевых механоидов, подчиняющихся не приказам фракции, а личной сети контроля.
-Такие механиторы редко не вступают в переговоры. Они постоянно перемещаются, избегают длительных стоянок и реагируют на приближение чужаков как на угрозу. Возможно, в нём ещё осталась человеческая воля, и именно она делает его опаснее обычного механоидного узла.</SI_RogueMechanitorFaction.description>
-
-<SI_RogueMechanitorFaction.pawnSingular>механитор</SI_RogueMechanitorFaction.pawnSingular>
-<SI_RogueMechanitorFaction.pawnsPlural>механиторы</SI_RogueMechanitorFaction.pawnsPlural>
-
-<SI_RogueMechanitorFaction.leaderTitle>механитор</SI_RogueMechanitorFaction.leaderTitle>
-<SI_RogueMechanitorFaction.leaderTitleFemale>механитор</SI_RogueMechanitorFaction.leaderTitleFemale>
-
-
+  <SI_PsycasterVIPFaction.label>аномальный псионик</SI_PsycasterVIPFaction.label>
+  <SI_PsycasterVIPFaction.description>Загадочный могущественный псионик-одиночка, блуждающий среди руин цивилизаций. Неизвестно, как именно он получил свою силу, однако ясно наверняка, что он применяет её ко всем угрозам, стоящим у него на пути. Любой осмелившийся приблизиться к нему для ведения переговоров или открытой конфронтации гарантированно прощался с жизнью. Кажется, псионик готов даже умереть, лишь бы не стать чьим-нибудь заложником.\n\nТем не менее, ошибочно думать, что он будет честно сражаться, поскольку его необычные генетические способности дают ему неоспоримое преимущество на поле боя.</SI_PsycasterVIPFaction.description>
+  <SI_PsycasterVIPFaction.pawnSingular>псионик</SI_PsycasterVIPFaction.pawnSingular>
+  <SI_PsycasterVIPFaction.pawnsPlural>псионик</SI_PsycasterVIPFaction.pawnsPlural>
+  <SI_RogueMechanitorFaction.leaderTitle>псионик</SI_RogueMechanitorFaction.leaderTitle>
+  <SI_RogueMechanitorFaction.leaderTitleFemale>псионик</SI_RogueMechanitorFaction.leaderTitleFemale>
 
 </LanguageData>

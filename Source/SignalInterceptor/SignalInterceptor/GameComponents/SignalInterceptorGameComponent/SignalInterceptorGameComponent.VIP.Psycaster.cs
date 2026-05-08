@@ -1,4 +1,5 @@
 ﻿using RimWorld;
+using RimWorld.Planet;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,24 +23,37 @@ namespace SignalInterceptor
                 return;
             }
 
-            Faction hostileFaction = Faction.OfAncientsHostile;
+            Faction hostileFaction = CreatePsycasterVIPFactionForMap();
 
             if (hostileFaction == null)
             {
-                hostileFaction = Find.FactionManager.AllFactions
-                    .Where(f => f != null && !f.IsPlayer && f.HostileTo(Faction.OfPlayer))
-                    .RandomElementWithFallback(null);
-            }
+                Log.Error("[Signal Interceptor] Failed to create psycaster VIP faction. Psycaster VIP spawn aborted.");
 
-            if (hostileFaction == null)
-            {
-                Log.Error("[Signal Interceptor] Failed to find hostile faction for PsycasterVIP.");
                 data.rewardGiven = true;
                 data.vipSpawned = true;
+                data.enemyFaction = null;
+
                 return;
             }
 
             data.enemyFaction = hostileFaction;
+
+            if (data.site != null)
+            {
+                data.site.SetFaction(hostileFaction);
+                data.site.factionMustRemainHostile = false;
+            }
+
+            Log.Message("[Signal Interceptor] Psycaster spawn faction check:" +
+                        " | site=" + (data.site?.LabelCap ?? "null") +
+                        " | siteFaction=" + (data.site?.Faction?.Name ?? "null") +
+                        " | psycasterFaction=" + (hostileFaction?.Name ?? "null") +
+                        " | factionDef=" + (hostileFaction?.def?.defName ?? "null") +
+                        " | contextFaction=" + (data.faction?.Name ?? "null") +
+                        " | temporary=" + hostileFaction.temporary +
+                        " | hiddenField=" + hostileFaction.hidden +
+                        " | HiddenProperty=" + hostileFaction.Hidden +
+                        " | leader=" + (hostileFaction.leader?.LabelShort ?? "null"));
 
             PawnGenerationRequest request = new PawnGenerationRequest(
                 kind: PawnKindDefOf.Colonist,
@@ -101,8 +115,11 @@ namespace SignalInterceptor
             TryForcePsycasterAttackNearestPlayerPawn(psycaster, map);
 
             Find.LetterStack.ReceiveLetter(
-                "SI_VIP_Name_Psycaster".Translate(),
-                "SI_VIP_Desc_Psycaster".Translate("SI_PsycasterVIP_UnknownWorker".Translate()),
+                "SI_PsycasterVIP_Title".Translate(),
+                "SI_PsycasterVIP_Text".Translate(
+                    psycaster.LabelShort,
+                    hostileFaction.Name
+                ),
                 LetterDefOf.ThreatBig,
                 new LookTargets(psycaster)
             );
@@ -112,6 +129,197 @@ namespace SignalInterceptor
                         " | Faction=" + hostileFaction.Name +
                         " | Tier=" + tier +
                         " | Psylink=" + psylinkLevel);
+        }
+
+        private void CleanupPsycasterVIPSettlements()
+        {
+            List<Settlement> settlements = Find.WorldObjects.AllWorldObjects
+                .OfType<Settlement>()
+                .Where(s => s.Faction != null
+                         && IsPsycasterVIPFactionDef(s.Faction.def))
+                .ToList();
+
+            foreach (Settlement settlement in settlements)
+            {
+                Log.Warning("[Signal Interceptor] Removing invalid psycaster VIP settlement: " +
+                            settlement.Label +
+                            " | tile=" + settlement.Tile +
+                            " | faction=" + (settlement.Faction?.Name ?? "null") +
+                            " | factionDef=" + (settlement.Faction?.def?.defName ?? "null"));
+
+                Find.WorldObjects.Remove(settlement);
+            }
+        }
+
+        private bool IsPsycasterVIPFactionDef(FactionDef def)
+        {
+            return def != null && def.defName == "SI_PsycasterVIPFaction";
+        }
+
+        private FactionDef GetPsycasterVIPFactionDef()
+        {
+            FactionDef def = DefDatabase<FactionDef>.GetNamedSilentFail("SI_PsycasterVIPFaction");
+
+            if (def != null)
+                return def;
+
+            Log.Warning("[Signal Interceptor] SI_PsycasterVIPFaction FactionDef not found. Falling back to Pirate.");
+            return FactionDefOf.Pirate;
+        }
+
+        private Faction CreatePsycasterVIPFactionForMap()
+        {
+            FactionDef wantedDef = GetPsycasterVIPFactionDef();
+
+            FactionDef generatorDef = wantedDef;
+
+            if (generatorDef == null || generatorDef.factionNameMaker == null)
+            {
+                Log.Warning("[Signal Interceptor] Psycaster VIP faction def has no factionNameMaker. " +
+                            "Using Pirate as generator base, then overriding faction.def.");
+
+                generatorDef = FactionDefOf.Pirate;
+            }
+
+            Faction faction = null;
+
+            try
+            {
+                faction = FactionGenerator.NewGeneratedFaction(
+                    new FactionGeneratorParms(generatorDef)
+                );
+            }
+            catch (Exception ex)
+            {
+                Log.Error("[Signal Interceptor] Failed to generate psycaster VIP faction through FactionGenerator. " +
+                          "Fallback to Pirate generator. Exception: " + ex);
+
+                faction = FactionGenerator.NewGeneratedFaction(
+                    new FactionGeneratorParms(FactionDefOf.Pirate)
+                );
+            }
+
+            if (faction == null)
+            {
+                Log.Error("[Signal Interceptor] FactionGenerator returned null for psycaster VIP faction.");
+                return null;
+            }
+
+            if (wantedDef != null)
+            {
+                faction.def = wantedDef;
+            }
+
+            faction.temporary = true;
+            faction.hidden = false;
+            faction.defeated = false;
+            faction.Name = GeneratePsycasterVIPFactionName();
+            faction.leader = null;
+
+            if (!Find.FactionManager.AllFactions.Contains(faction))
+            {
+                Find.FactionManager.Add(faction);
+            }
+
+            CleanupPsycasterVIPSettlements();
+
+            faction.TryMakeInitialRelationsWith(Faction.OfPlayer);
+
+            faction.SetRelationDirect(
+                Faction.OfPlayer,
+                FactionRelationKind.Hostile,
+                canSendHostilityLetter: false
+            );
+
+            foreach (Faction other in Find.FactionManager.AllFactions)
+            {
+                if (other == null || other == faction || other == Faction.OfPlayer)
+                    continue;
+
+                faction.TryMakeInitialRelationsWith(other);
+
+                FactionRelation rel = faction.RelationWith(other, allowNull: true);
+                if (rel != null)
+                {
+                    rel.baseGoodwill = 0;
+                    rel.kind = FactionRelationKind.Neutral;
+                }
+
+                FactionRelation otherRel = other.RelationWith(faction, allowNull: true);
+                if (otherRel != null)
+                {
+                    otherRel.baseGoodwill = 0;
+                    otherRel.kind = FactionRelationKind.Neutral;
+                }
+            }
+
+            Log.Message("[Signal Interceptor] Created psycaster VIP map faction: " +
+                        faction.Name +
+                        " | def=" + faction.def.defName +
+                        " | label=" + faction.def.LabelCap +
+                        " | generatorDef=" + generatorDef.defName +
+                        " | temporary=" + faction.temporary +
+                        " | hidden=" + faction.hidden +
+                        " | HiddenProperty=" + faction.Hidden +
+                        " | defeated=" + faction.defeated +
+                        " | leader=" + (faction.leader?.LabelShort ?? "null") +
+                        " | loadID=" + faction.loadID);
+
+            return faction;
+        }
+
+        private string GeneratePsycasterVIPFactionName()
+        {
+            List<string> nouns = GetTranslatedStringListSafe(
+                "SI_PsycasterFaction_NameNouns",
+                new List<string>
+                {
+            "Контур",
+            "Резонанс",
+            "Импульс",
+            "Отголосок",
+            "Разлом",
+            "Шёпот",
+            "След",
+            "Мираж"
+                }
+            );
+
+            List<string> adjectives = GetTranslatedStringListSafe(
+                "SI_PsycasterFaction_NameAdjectives",
+                new List<string>
+                {
+            "Сухой Травы",
+            "Жёлтой Пыли",
+            "Тусклого Солнца",
+            "Молчаливого Разума",
+            "Пепельной Воли",
+            "Холодного Сознания",
+            "Глухой Мысли",
+            "Выжженного Нерва"
+                }
+            );
+
+            return nouns.RandomElement() + " " + adjectives.RandomElement();
+        }
+
+        private List<string> GetTranslatedStringListSafe(string key, List<string> fallback)
+        {
+            if (key.CanTranslate())
+            {
+                string raw = key.Translate().ToString();
+
+                List<string> result = raw
+                    .Split(new char[] { '|' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .Where(s => !string.IsNullOrEmpty(s))
+                    .ToList();
+
+                if (result.Count > 0)
+                    return result;
+            }
+
+            return fallback;
         }
 
         private void TryApplyInitialPsycasterBuffs(VIPSiteData data, Pawn psycaster)
