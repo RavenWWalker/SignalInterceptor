@@ -134,6 +134,9 @@ namespace SignalInterceptor.AI.Psycaster
             if (caster.Map == null)
                 return;
 
+            if (TryExtinguishSelfWithWaterskip())
+                return;
+
             int now = Find.TickManager.TicksGame;
 
             if (TryStopLeavingMapJob())
@@ -615,6 +618,109 @@ namespace SignalInterceptor.AI.Psycaster
             return true;
         }
 
+        private bool TryExtinguishSelfWithWaterskip()
+        {
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null)
+                return false;
+
+            if (!IsCasterBurningNow())
+                return false;
+
+            if (IsOnSoftCooldown("Waterskip"))
+                return false;
+
+            AbilityDef waterskipDef = GetAbilityDef("Waterskip");
+
+            if (waterskipDef == null)
+                return false;
+
+            object ability = GetPawnAbilityObject(waterskipDef);
+
+            if (ability == null)
+                return false;
+
+            if (IsAbilityOnCooldown(ability))
+                return false;
+
+            bool casted = gc.TryCastPsyAbilityAtCellControlled_Public(
+                caster,
+                "Waterskip",
+                caster.Position,
+                PsycasterTuning.StandardPulseRange,
+                true);
+
+            if (!casted)
+                return false;
+
+            pendingMeleeTargetThingId = -1;
+            pendingMeleeUntilTick = -1;
+            pendingMeleeReason = null;
+
+            ClearKillContract("Waterskip self extinguish");
+
+            softCooldowns["Waterskip"] = Find.TickManager.TicksGame + Rand.RangeInclusive(300, 480);
+
+            nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupShort + 30;
+            nextStanceReevalTick = Find.TickManager.TicksGame + 30;
+
+            Log.Message("[Signal Interceptor] Psycaster emergency Waterskip self-extinguish: "
+                        + caster.LabelShort
+                        + " | pos=" + caster.Position);
+
+            return true;
+        }
+
+        private bool IsCasterBurningNow()
+        {
+            if (caster == null || !caster.Spawned || caster.Map == null)
+                return false;
+
+            List<Thing> things = caster.Position.GetThingList(caster.Map);
+
+            if (things != null)
+            {
+                for (int i = 0; i < things.Count; i++)
+                {
+                    Thing t = things[i];
+
+                    if (t == null || t.Destroyed)
+                        continue;
+
+                    if (t is Fire)
+                        return true;
+
+                    if (t.def != null && t.def.defName == "Fire")
+                        return true;
+                }
+            }
+
+            if (caster.health != null && caster.health.hediffSet != null)
+            {
+                List<Hediff> hediffs = caster.health.hediffSet.hediffs;
+
+                for (int i = 0; i < hediffs.Count; i++)
+                {
+                    Hediff h = hediffs[i];
+
+                    if (h == null || h.def == null || h.def.defName == null)
+                        continue;
+
+                    string defName = h.def.defName;
+
+                    if (defName.IndexOf("Burn", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        defName.IndexOf("Fire", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         private bool TryRunRecoveryLogic(BattlefieldSnapshot snap)
         {
             if (caster == null || caster.Destroyed || caster.Dead || caster.Downed)
@@ -649,7 +755,7 @@ namespace SignalInterceptor.AI.Psycaster
             if (!recoveryMode)
                 return false;
 
-            if (IsRecoveredEnough())
+            if (IsRecoveredEnough(snap))
             {
                 recoveryMode = false;
                 recoveryStartedTick = -1;
@@ -658,7 +764,8 @@ namespace SignalInterceptor.AI.Psycaster
                 Log.Message("[Signal Interceptor] Psycaster recovered and re-engaging: "
                             + caster.LabelShort
                             + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
-                            + " | bleeding=" + HasDangerousBleeding());
+                            + " | bleeding=" + HasDangerousBleeding()
+                            + " | plateau=" + IsRecoveryPlateauLikely());
 
                 nextActionSelectTick = now + Rand.RangeInclusive(30, 60);
                 nextStanceReevalTick = now + Rand.RangeInclusive(30, 60);
@@ -776,7 +883,13 @@ namespace SignalInterceptor.AI.Psycaster
             bool dangerous = hp <= 0.65f;
             bool damaged = hp <= 0.85f;
 
-            if (!underRangedPressure && !critical && !dangerous)
+            /*
+             * Важный фикс:
+             * если ranged pressure нет, не спамим defensive Invisibility/Smokepop.
+             * Против одного melee recovery должен решаться движением/Skip,
+             * иначе получается бесконечный цикл невидимости.
+             */
+            if (!underRangedPressure)
                 return false;
 
             /*
@@ -800,7 +913,7 @@ namespace SignalInterceptor.AI.Psycaster
             }
 
             /*
-             * 2) Smokepop — если Invisibility недоступна.
+             * 2) Smokepop — если Invisibility недоступна или ситуация менее критичная.
              */
             if ((dangerous || damaged || severeRangedPressure) && rangedLos >= 1)
             {
@@ -1359,20 +1472,119 @@ namespace SignalInterceptor.AI.Psycaster
             return "unknown";
         }
 
-        private bool IsRecoveredEnough()
+        private bool IsRecoveredEnough(BattlefieldSnapshot snap)
         {
             if (caster == null || caster.health == null)
                 return false;
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
-            if (hp < 0.82f)
+            /*
+             * Нормальный выход: почти восстановился.
+             */
+            if (hp >= 0.90f && !HasDangerousBleeding())
+                return true;
+
+            /*
+             * Осторожный выход: достаточно восстановился и рядом нет давления.
+             */
+            if (hp >= 0.82f && !HasDangerousBleeding() && !HasRecoveryThreatPressure(snap))
+                return true;
+
+            /*
+             * Важный фикс:
+             * если конечность отрублена, SummaryHealthPercent может навсегда застрять
+             * на 0.55-0.70. В таком случае нельзя требовать 0.82/0.90.
+             *
+             * Если давно не получал урон, реген доступен, рядом нет угрозы,
+             * а HP не растёт до старого порога — считаем это плато и возвращаемся в бой.
+             */
+            if (IsRecoveryPlateauLikely() && !HasRecoveryThreatPressure(snap))
+                return true;
+
+            return false;
+        }
+
+        private bool IsRecoveryPlateauLikely()
+        {
+            if (caster == null || caster.health == null)
                 return false;
 
-            if (HasDangerousBleeding())
+            float hp = caster.health.summaryHealth.SummaryHealthPercent;
+
+            if (hp < 0.55f)
                 return false;
 
-            return true;
+            HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
+
+            int ticksSinceDamage = restore != null ? restore.TicksSinceDamage : -1;
+
+            /*
+             * Если реген доступен и очень давно не было урона,
+             * но HP всё ещё не выше 0.82, скорее всего это не временная рана,
+             * а потерянная конечность / permanent cap.
+             */
+            if (restore != null &&
+                restore.CanRegenerateNow &&
+                ticksSinceDamage >= 1800 &&
+                hp >= 0.55f)
+            {
+                return true;
+            }
+
+            /*
+             * Дополнительный safety:
+             * если recovery длится уже очень долго и HP хотя бы не критический,
+             * не держим AI в вечном бегстве.
+             */
+            if (recoveryStartedTick > 0)
+            {
+                int recoveryDuration = Find.TickManager.TicksGame - recoveryStartedTick;
+
+                if (recoveryDuration >= 2400 && hp >= 0.55f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool HasRecoveryThreatPressure(BattlefieldSnapshot snap)
+        {
+            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
+                return false;
+
+            int closeMeleeOrAnimals = 0;
+            int rangedLos = 0;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned)
+                    continue;
+
+                bool meleeLike = e.IsAnimal || e.IsMelee || e.role == EnemyRole.Wimp;
+
+                if (meleeLike && e.distanceToCaster <= 10f)
+                    closeMeleeOrAnimals++;
+
+                if (e.IsRanged && e.hasLineOfSight && e.canShootNow)
+                    rangedLos++;
+            }
+
+            if (closeMeleeOrAnimals > 0)
+                return true;
+
+            if (rangedLos > 0)
+                return true;
+
+            if (snap.totalIncomingDps >= 10f)
+                return true;
+
+            return false;
         }
 
         private bool TryRunPendingMelee(BattlefieldSnapshot snap)

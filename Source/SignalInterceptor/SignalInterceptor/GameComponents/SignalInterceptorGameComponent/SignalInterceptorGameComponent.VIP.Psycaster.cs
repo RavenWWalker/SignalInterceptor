@@ -712,7 +712,13 @@ namespace SignalInterceptor
             {
                 abilityNames.AddRange(new[]
                 {
-            "BlindingPulse"
+            "BlindingPulse",
+
+            /*
+             * Waterskip нужен как аварийное тушение самого пси-кастера.
+             * Vanilla defName: Waterskip.
+             */
+            "Waterskip"
         });
             }
 
