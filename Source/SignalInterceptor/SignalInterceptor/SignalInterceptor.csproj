@@ -74,6 +74,7 @@
     <Compile Include="AI\Psycaster\Scorers\Scorer_BlindingPulse.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_ChaosSkip.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Invisibility.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_ManhunterPulse.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_MassChaosSkip.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_MeleeAttack.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Skip.cs" />

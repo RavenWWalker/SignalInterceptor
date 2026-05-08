@@ -58,7 +58,9 @@ namespace SignalInterceptor.AI.Psycaster
 
                 if (e.IsMechanoid)
                     continue;
-
+                
+                if (e.IsAnimal && e.distanceToCaster > 4f)
+                    continue;
                 /*
                  * Wimp обычно не приоритетная цель для Stun.
                  * Но если это единственный враг или он уже близко — Stun нужен,

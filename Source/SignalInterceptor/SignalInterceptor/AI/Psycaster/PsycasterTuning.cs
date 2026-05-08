@@ -144,7 +144,7 @@
         public const float W_Opening_Skip = 0.6f;
         public const float W_Opening_ChaosSkip = 0.5f;
         public const float W_Opening_MassChaosSkip = 0.8f;
-        public const float W_Opening_ManhunterPulse = 1.0f;
+        public const float W_Opening_ManhunterPulse = 1.8f;
         public const float W_Opening_Smokepop = 0.0f;
         public const float W_Opening_Wallraise = 0.4f;
         public const float W_Opening_Skipshield = 0.3f;
@@ -161,7 +161,7 @@
         public const float W_Kite_Skip = 0.8f;
         public const float W_Kite_ChaosSkip = 1.0f;
         public const float W_Kite_MassChaosSkip = 1.0f;
-        public const float W_Kite_ManhunterPulse = 1.5f;
+        public const float W_Kite_ManhunterPulse = 2.0f;
         public const float W_Kite_Smokepop = 2.4f;
         public const float W_Kite_Wallraise = 0.4f;
         public const float W_Kite_Skipshield = 1.4f;
@@ -178,7 +178,7 @@
         public const float W_Disengage_Skip = 0.0f;
         public const float W_Disengage_ChaosSkip = 1.4f;
         public const float W_Disengage_MassChaosSkip = 1.2f;
-        public const float W_Disengage_ManhunterPulse = 1.0f;
+        public const float W_Disengage_ManhunterPulse = 1.5f;
         public const float W_Disengage_Smokepop = 0.8f;
         public const float W_Disengage_Wallraise = 1.4f;
         public const float W_Disengage_Skipshield = 1.2f;
@@ -195,7 +195,7 @@
         public const float W_CrowdControl_Skip = 0.4f;
         public const float W_CrowdControl_ChaosSkip = 0.6f;
         public const float W_CrowdControl_MassChaosSkip = 1.6f;
-        public const float W_CrowdControl_ManhunterPulse = 2.5f;
+        public const float W_CrowdControl_ManhunterPulse = 3.2f;
         public const float W_CrowdControl_Smokepop = 1.6f;
         public const float W_CrowdControl_Wallraise = 0.5f;
         public const float W_CrowdControl_Skipshield = 1.3f;
@@ -212,7 +212,7 @@
         public const float W_Hunt_Skip = 1.6f;
         public const float W_Hunt_ChaosSkip = 0.3f;
         public const float W_Hunt_MassChaosSkip = 0.3f;
-        public const float W_Hunt_ManhunterPulse = 0.5f;
+        public const float W_Hunt_ManhunterPulse = 0.8f;
         public const float W_Hunt_Smokepop = 1.2f;
         public const float W_Hunt_Wallraise = 0.0f;
         public const float W_Hunt_Skipshield = 1.1f;
@@ -229,7 +229,7 @@
         public const float W_Engulfed_Skip = 0.0f;
         public const float W_Engulfed_ChaosSkip = 1.2f;
         public const float W_Engulfed_MassChaosSkip = 2.0f;
-        public const float W_Engulfed_ManhunterPulse = 1.5f;
+        public const float W_Engulfed_ManhunterPulse = 3.0f;
         public const float W_Engulfed_Smokepop = 1.5f;
         public const float W_Engulfed_Wallraise = 0.6f;
         public const float W_Engulfed_Skipshield = 1.4f;
@@ -246,7 +246,7 @@
         public const float W_Survive_Skip = 0.0f;
         public const float W_Survive_ChaosSkip = 1.5f;
         public const float W_Survive_MassChaosSkip = 1.6f;
-        public const float W_Survive_ManhunterPulse = 1.0f;
+        public const float W_Survive_ManhunterPulse = 2.2f;
         public const float W_Survive_Smokepop = 3.2f;
         public const float W_Survive_Wallraise = 1.6f;
         public const float W_Survive_Skipshield = 3.0f;

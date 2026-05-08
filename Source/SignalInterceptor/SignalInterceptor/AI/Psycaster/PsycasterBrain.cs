@@ -118,7 +118,7 @@ namespace SignalInterceptor.AI.Psycaster
 
             // Пачка 6: будущие ситуативные
             // scorers.Add(new Scorer_Berserk());
-            // scorers.Add(new Scorer_ManhunterPulse());
+            scorers.Add(new Scorer_ManhunterPulse());
             // scorers.Add(new Scorer_Focus());
         }
 
@@ -627,11 +627,23 @@ namespace SignalInterceptor.AI.Psycaster
                 return;
 
             // В recovery режиме пси-кастер имеет право сначала прожать emergency Skip.
-            // Иначе он может умереть от огня до того, как 15 секунд без урона вообще начнутся.
+            // Иначе он может умереть от огня до того, как реген вообще начнётся.
             if (snap != null && snap.HasEnemies && TryEmergencyRetreat(snap))
                 return;
 
-            if (caster.CurJobDef == JobDefOf.Goto)
+            /*
+             * Старое поведение:
+             * if (caster.CurJobDef == JobDefOf.Goto) return;
+             *
+             * Проблема:
+             * кастер один раз выбирал клетку отхода и больше не проверял,
+             * догнали ли его животные / melee-враги.
+             *
+             * Новое поведение:
+             * если текущий Goto всё ещё безопасен — не трогаем.
+             * если враг снова близко — пересчитываем отход.
+             */
+            if (caster.CurJobDef == JobDefOf.Goto && IsRecoveryPositionStillSafe(snap))
                 return;
 
             IntVec3 retreatCell;
@@ -640,7 +652,7 @@ namespace SignalInterceptor.AI.Psycaster
             {
                 Job job = JobMaker.MakeJob(JobDefOf.Goto, retreatCell);
                 job.locomotionUrgency = LocomotionUrgency.Sprint;
-                job.expiryInterval = Rand.RangeInclusive(120, 180);
+                job.expiryInterval = Rand.RangeInclusive(90, 150);
 
                 caster.jobs.StartJob(job, JobCondition.InterruptForced);
 
@@ -666,6 +678,53 @@ namespace SignalInterceptor.AI.Psycaster
                             + " | canRegen=" + (comp != null && comp.CanRegenerateNow)
                             + " | ticksSinceDamage=" + (comp != null ? comp.TicksSinceDamage : -1));
             }
+        }
+
+        private bool IsRecoveryPositionStillSafe(BattlefieldSnapshot snap)
+        {
+            if (caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
+                return true;
+
+            Map map = caster.Map;
+
+            if (map == null)
+                return false;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != map)
+                    continue;
+
+                /*
+                 * Животные и melee-враги опасны даже без "ranged fire".
+                 * Если они снова подошли близко — текущий Goto больше не безопасен,
+                 * надо пересчитать отступление.
+                 */
+                if ((e.IsAnimal || e.IsMelee) && e.distanceToCaster < 14f)
+                    return false;
+
+                /*
+                 * Дальник с LOS тоже ломает recovery:
+                 * реген не успеет начаться, если кастера продолжают простреливать.
+                 */
+                if (e.IsRanged && e.hasLineOfSight)
+                {
+                    float safeRange = e.weaponRange > 0f ? e.weaponRange + 2f : 24f;
+
+                    if (e.distanceToCaster <= safeRange)
+                        return false;
+                }
+            }
+
+            return true;
         }
 
         private HediffComp_PsycasterRestoringMechanisms GetRestoringMechanisms()
@@ -718,7 +777,7 @@ namespace SignalInterceptor.AI.Psycaster
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
-            if (hp < 0.68f)
+            if (hp < 0.82f)
                 return false;
 
             if (HasDangerousBleeding())
@@ -1116,14 +1175,19 @@ namespace SignalInterceptor.AI.Psycaster
             IntVec3 best = IntVec3.Invalid;
             float bestScore = float.MinValue;
 
-            for (int i = 0; i < 80; i++)
+            /*
+             * Было 80 попыток. Увеличиваем до 140, потому что теперь фильтр
+             * строже: клетка должна быть безопасна не только от topThreat,
+             * но и от животных/melee.
+             */
+            for (int i = 0; i < 140; i++)
             {
                 IntVec3 cell;
 
                 if (!CellFinder.TryFindRandomCellNear(
                     caster.Position,
                     map,
-                    22,
+                    26,
                     c => c.InBounds(map)
                          && c.Standable(map)
                          && c.GetFirstPawn(map) == null
@@ -1134,38 +1198,88 @@ namespace SignalInterceptor.AI.Psycaster
                     continue;
                 }
 
-                float distFromThreat = cell.DistanceTo(threat.Position);
                 float distFromCaster = cell.DistanceTo(caster.Position);
+                float distFromThreat = cell.DistanceTo(threat.Position);
 
+                // Нет смысла "отступать" на 2-3 клетки.
                 if (distFromCaster < 8f)
                     continue;
 
+                /*
+                 * Базовый запрет: не выбирать клетку совсем рядом с главной угрозой.
+                 * Для животных и melee ниже будет ещё более строгая проверка.
+                 */
                 if (distFromThreat < 12f)
+                    continue;
+
+                float nearestMeleeOrAnimal = 999f;
+                float nearestRangedLos = 999f;
+                int visibleShooters = 0;
+
+                if (snap.enemies != null)
+                {
+                    for (int eIndex = 0; eIndex < snap.enemies.Count; eIndex++)
+                    {
+                        EnemyAssessment e = snap.enemies[eIndex];
+
+                        if (e == null || e.pawn == null)
+                            continue;
+
+                        if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != map)
+                            continue;
+
+                        float ed = cell.DistanceTo(e.pawn.Position);
+
+                        /*
+                         * Животные в SnapshotBuilder считаются Animal, а не Ranged.
+                         * Поэтому отдельно держим от них дистанцию.
+                         */
+                        if (e.IsAnimal || e.IsMelee)
+                        {
+                            if (ed < nearestMeleeOrAnimal)
+                                nearestMeleeOrAnimal = ed;
+                        }
+
+                        if (e.IsRanged && GenSight.LineOfSight(e.pawn.Position, cell, map))
+                        {
+                            visibleShooters++;
+
+                            if (ed < nearestRangedLos)
+                                nearestRangedLos = ed;
+                        }
+                    }
+                }
+
+                /*
+                 * Ключевой фикс:
+                 * recovery-клетка не должна быть в зоне быстрого повторного контакта
+                 * с животным или melee-врагом.
+                 */
+                if (nearestMeleeOrAnimal < 16f)
                     continue;
 
                 float score = 0f;
 
+                // Чем дальше от главной угрозы — тем лучше.
                 score += distFromThreat * 2.0f;
+
+                // Чем дальше от ближайшего животного/melee — тем лучше.
+                if (nearestMeleeOrAnimal < 999f)
+                    score += nearestMeleeOrAnimal * 2.5f;
+
+                // Слишком много стрелков видят клетку — плохо.
+                score -= visibleShooters * 22f;
+
+                // Если ближайший стрелок с LOS всё ещё слишком близко — штраф.
+                if (nearestRangedLos < 24f)
+                    score -= (24f - nearestRangedLos) * 4f;
+
+                // Небольшой бонус за реальное перемещение.
                 score += distFromCaster * 0.25f;
 
-                int visibleShooters = 0;
-
-                if (snap.rangedEnemies != null)
-                {
-                    for (int r = 0; r < snap.rangedEnemies.Count; r++)
-                    {
-                        EnemyAssessment e = snap.rangedEnemies[r];
-
-                        if (e == null || e.pawn == null || !e.pawn.Spawned || e.pawn.Map != map)
-                            continue;
-
-                        if (GenSight.LineOfSight(e.pawn.Position, cell, map))
-                            visibleShooters++;
-                    }
-                }
-
-                score -= visibleShooters * 18f;
-
+                /*
+                 * Не уводим VIP слишком далеко от якоря сайта.
+                 */
                 if (HomeAnchor.IsValid)
                 {
                     float homeDist = cell.DistanceTo(HomeAnchor);
@@ -1296,56 +1410,136 @@ namespace SignalInterceptor.AI.Psycaster
                     break;
             }
 
-            if (casted)
+            if (!casted)
+                return;
+
+            string abilityName = action.abilityDefName;
+
+            /*
+             * ManhunterPulse — это "создать хаос и оторваться".
+             * После него нельзя продолжать старый melee-contract.
+             */
+            if (abilityName == "ManhunterPulse")
+            {
+                pendingMeleeTargetThingId = -1;
+                pendingMeleeUntilTick = -1;
+                pendingMeleeReason = null;
+
+                ClearKillContract("ManhunterPulse disengage");
+
+                recoveryMode = true;
+                recoveryStartedTick = Find.TickManager.TicksGame;
+                nextRecoveryThinkTick = Find.TickManager.TicksGame;
+
+                currentStance = PsycasterStance.Survive;
+
+                nextEmergencyRetreatTick = Find.TickManager.TicksGame;
+                nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupLong + 30;
+                nextStanceReevalTick = Find.TickManager.TicksGame + 180;
+
+                ApplySoftCooldown(abilityName);
+
+                Log.Message("[Signal Interceptor] Psycaster action: " + abilityName
+                            + " | score=" + action.score.ToString("F2")
+                            + " | stance=" + currentStance
+                            + " | reason=" + (action.debugReason ?? "")
+                            + " | postAction=disengage/recovery");
+
+                LastChosenAction = action;
+                return;
+            }
+
+            /*
+             * ChaosSkip — это panic escape / disruption.
+             *
+             * ВАЖНО:
+             * Не ставим QueuePendingMelee после ChaosSkip.
+             * ChaosSkip часто отбрасывает цель далеко. Если после него ставить pending-melee,
+             * кастер начинает бежать за медведем через полкарты и ловит лишний урон.
+             */
+            if (abilityName == "ChaosSkip")
             {
                 if (action.targetPawn != null)
-                {
-                    string n = action.abilityDefName;
-                    float d = caster.Position.DistanceTo(action.targetPawn.Position);
+                    MarkPawnRecentlyMoved(action.targetPawn, 600);
 
-                    if (n == "Beckon" || n == "Skip" || n == "ChaosSkip")
-                    {
-                        MarkPawnRecentlyMoved(action.targetPawn, 600);
-                        QueuePendingMelee(action.targetPawn, 480, n);
-                        StartKillContract(action.targetPawn, 900, n);
-                    }
+                pendingMeleeTargetThingId = -1;
+                pendingMeleeUntilTick = -1;
+                pendingMeleeReason = null;
 
-                    if (n == "Stun")
-                    {
-                        MarkPawnRecentlyMoved(action.targetPawn, 180);
+                ClearKillContract("ChaosSkip disengage");
 
-                        // Stun теперь считается melee-pin, а не способом догонять цель с 15 клеток.
-                        // Контракт стартует/обновляется, но StunScorer ниже запретит дальний Stun.
-                        QueuePendingMelee(action.targetPawn, 240, "Stun");
-                        StartKillContract(action.targetPawn, d <= 3.5f ? 600 : 300, "Stun");
-                    }
-                }
-
-                ApplySoftCooldown(action.abilityDefName);
+                ApplySoftCooldown(abilityName);
 
                 int warmup = action.castWarmupTicks > 0
                     ? action.castWarmupTicks
-                    : PsycasterTuning.CastWarmupMedium;
+                    : PsycasterTuning.CastWarmupShort;
 
-                int extraDelay = 30;
+                nextActionSelectTick = Find.TickManager.TicksGame + warmup + 60;
+                nextStanceReevalTick = Find.TickManager.TicksGame + 60;
 
-                if (action.abilityDefName == "Stun")
-                {
-                    extraDelay = 0;
-                }
-                else if ((action.abilityDefName == "Beckon" || action.abilityDefName == "Skip") &&
-                         action.targetPawn != null)
-                {
-                    extraDelay = 5;
-                }
-
-                nextActionSelectTick = Find.TickManager.TicksGame + warmup + extraDelay;
-
-                Log.Message("[Signal Interceptor] Psycaster action: " + action.abilityDefName
+                Log.Message("[Signal Interceptor] Psycaster action: " + abilityName
                             + " | score=" + action.score.ToString("F2")
                             + " | stance=" + currentStance
-                            + " | reason=" + (action.debugReason ?? ""));
+                            + " | reason=" + (action.debugReason ?? "")
+                            + " | postAction=no-pending-melee");
+
+                LastChosenAction = action;
+                return;
             }
+
+            if (action.targetPawn != null)
+            {
+                float d = caster.Position.DistanceTo(action.targetPawn.Position);
+
+                /*
+                 * Beckon и Skip — это контролируемое перемещение цели под melee-добивание.
+                 * Для них pending-melee нужен.
+                 *
+                 * ChaosSkip отсюда убран специально.
+                 */
+                if (abilityName == "Beckon" || abilityName == "Skip")
+                {
+                    MarkPawnRecentlyMoved(action.targetPawn, 600);
+                    QueuePendingMelee(action.targetPawn, 480, abilityName);
+                    StartKillContract(action.targetPawn, 900, abilityName);
+                }
+
+                if (abilityName == "Stun")
+                {
+                    MarkPawnRecentlyMoved(action.targetPawn, 180);
+
+                    // Stun считается melee-pin.
+                    QueuePendingMelee(action.targetPawn, 240, "Stun");
+                    StartKillContract(action.targetPawn, d <= 3.5f ? 600 : 300, "Stun");
+                }
+            }
+
+            ApplySoftCooldown(abilityName);
+
+            int finalWarmup = action.castWarmupTicks > 0
+                ? action.castWarmupTicks
+                : PsycasterTuning.CastWarmupMedium;
+
+            int extraDelay = 30;
+
+            if (abilityName == "Stun")
+            {
+                extraDelay = 0;
+            }
+            else if ((abilityName == "Beckon" || abilityName == "Skip") &&
+                     action.targetPawn != null)
+            {
+                extraDelay = 5;
+            }
+
+            nextActionSelectTick = Find.TickManager.TicksGame + finalWarmup + extraDelay;
+
+            Log.Message("[Signal Interceptor] Psycaster action: " + abilityName
+                        + " | score=" + action.score.ToString("F2")
+                        + " | stance=" + currentStance
+                        + " | reason=" + (action.debugReason ?? ""));
+
+            LastChosenAction = action;
         }
 
         private void FallbackBasicAttack(BattlefieldSnapshot snap)

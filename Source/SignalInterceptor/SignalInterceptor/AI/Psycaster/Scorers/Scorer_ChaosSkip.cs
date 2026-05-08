@@ -3,12 +3,16 @@
 namespace SignalInterceptor.AI.Psycaster
 {
     /// <summary>
-    /// ChaosSkip — телепорт врага в СЛУЧАЙНУЮ клетку.
+    /// ChaosSkip — аварийный телепорт врага в случайную клетку.
     ///
     /// ВАЖНО:
-    /// - не использовать против единственного melee-врага в дуэли;
-    /// - не использовать по цели kill-contract, если это не настоящая паника;
-    /// - не ломать melee-commit случайным отбрасыванием цели.
+    /// - НЕ использовать как обычный opener;
+    /// - НЕ использовать для начала melee-погони;
+    /// - НЕ использовать по Wimp/ближнику на дистанции;
+    /// - использовать только как panic-button, когда пси-кастер реально зажат.
+    ///
+    /// Для группового разброса есть MassChaosSkip.
+    /// Для притягивания цели есть Beckon/Skip/Stun.
     /// </summary>
     public class Scorer_ChaosSkip : AbilityScorerBase
     {
@@ -36,18 +40,36 @@ namespace SignalInterceptor.AI.Psycaster
             if (snap.enemies == null || snap.enemies.Count == 0)
                 return ScoredAction.None;
 
-            EnemyAssessment best = null;
-            float bestRaw = 0f;
-
-            bool singleEnemy = snap.enemies.Count == 1;
-
             bool panicState =
                 brain.CurrentStance == PsycasterStance.Engulfed ||
                 brain.CurrentStance == PsycasterStance.Survive;
 
-            for (int i = 0; i < snap.enemies.Count; i++)
+            /*
+             * ГЛАВНЫЙ ФИКС:
+             * Обычный ChaosSkip больше не используется вне panic-state.
+             *
+             * Именно это ломало бой:
+             * - цель была на 6-10 клетках;
+             * - AI кастовал ChaosSkip;
+             * - цель улетала на 18 клеток;
+             * - AI сам себе создавал длинную погоню.
+             */
+            if (!panicState)
+                return ScoredAction.None;
+
+            /*
+             * Даже в panic-state не надо использовать ChaosSkip, если пси-кастер
+             * не зажат рядом.
+             */
+            if (snap.enemiesAdjacent == null || snap.enemiesAdjacent.Count == 0)
+                return ScoredAction.None;
+
+            EnemyAssessment best = null;
+            float bestRaw = 0f;
+
+            for (int i = 0; i < snap.enemiesAdjacent.Count; i++)
             {
-                EnemyAssessment e = snap.enemies[i];
+                EnemyAssessment e = snap.enemiesAdjacent[i];
 
                 if (e == null || e.pawn == null)
                     continue;
@@ -55,78 +77,40 @@ namespace SignalInterceptor.AI.Psycaster
                 if (brain.WasPawnRecentlyMoved(e.pawn))
                     continue;
 
-                if (e.distanceToCaster > PsycasterTuning.ChaosSkipMaxDistance)
+                if (brain.IsKillContractTarget(e.pawn))
+                    continue;
+
+                if (e.distanceToCaster > 2.5f)
                     continue;
 
                 /*
-                 * ГЛАВНЫЙ ФИКС:
-                 * В дуэли 1 на 1 против ближника ChaosSkip почти всегда вреден.
-                 * Он случайно отбрасывает цель и ломает собственный melee-commit.
-                 *
-                 * Разрешаем только в настоящей панике и только если цель уже вплотную.
+                 * Не тратим ChaosSkip на дальника, если он не стоит прямо в упор.
                  */
-                if (singleEnemy && e.IsMelee)
-                {
-                    if (!panicState)
-                        continue;
-
-                    if (e.distanceToCaster > 1.6f)
-                        continue;
-                }
-
-                /*
-                 * Если цель уже является kill-contract целью, не надо её случайно
-                 * отбрасывать. Пси-кастер уже решил её зарезать.
-                 */
-                if (brain.IsKillContractTarget(e.pawn) && !panicState)
+                if (e.IsRanged && e.distanceToCaster > 1.6f)
                     continue;
 
                 /*
-                 * В обычном состоянии ChaosSkip по melee допустим только как
-                 * короткий emergency-сброс, когда враг реально рядом.
+                 * Не отбрасываем слабого Wimp, если можно просто зарезать/оглушить.
                  */
-                if (e.IsMelee && !panicState && e.distanceToCaster > 2.5f)
+                if (e.role == EnemyRole.Wimp && snap.casterHpFraction > 0.35f)
                     continue;
 
-                /*
-                 * В Kite нельзя ChaosSkip'ать стрелков/снайперов.
-                 * Это телепортирует их в случайную клетку и ломает план
-                 * "притянуть -> оглушить -> зарезать".
-                 */
-                if (e.IsRanged && !panicState)
-                    continue;
-
-                /*
-                 * В панике можно ChaosSkip'нуть дальника только если он уже почти вплотную.
-                 */
-                if (e.IsRanged && panicState && e.distanceToCaster > 2.5f)
-                    continue;
-
-                float raw = e.threatScore / 10f;
-
-                if (e.IsMelee)
-                    raw *= 1.8f;
+                float raw = 8f + (e.threatScore / 8f);
 
                 if (e.IsAnimal)
-                    raw *= 1.4f;
+                    raw *= 1.35f;
 
-                if (e.distanceToCaster <= 1.6f)
-                    raw *= 1.6f;
-                else if (e.distanceToCaster <= 2.5f)
-                    raw *= 1.3f;
+                if (e.IsMelee)
+                    raw *= 1.25f;
 
-                if (panicState)
-                    raw *= 1.4f;
+                if (e.distanceToCaster <= 1.2f)
+                    raw *= 1.25f;
 
-                if (brain.CurrentStance == PsycasterStance.Kite)
-                    raw *= 0.65f;
+                if (snap.casterHpFraction < 0.45f)
+                    raw *= 1.5f;
 
-                /*
-                 * Даже в panic state одиночную melee-цель не надо делать
-                 * приоритетнее нормального Stun/melee, если ситуация не критическая.
-                 */
-                if (singleEnemy && e.IsMelee)
-                    raw *= 0.45f;
+                if (snap.enemiesAdjacent.Count >= 3)
+                    raw *= 1.35f;
 
                 if (raw > bestRaw)
                 {
@@ -135,7 +119,7 @@ namespace SignalInterceptor.AI.Psycaster
                 }
             }
 
-            if (best == null)
+            if (best == null || bestRaw <= 0f)
                 return ScoredAction.None;
 
             ScoredAction action = new ScoredAction();
@@ -144,12 +128,11 @@ namespace SignalInterceptor.AI.Psycaster
             action.targetPawn = best.pawn;
             action.castWarmupTicks = PsycasterTuning.CastWarmupShort;
             action.score = bestRaw;
-            action.debugReason = "ChaosSkip emergency " + best.pawn.LabelShort
+            action.debugReason = "ChaosSkip panic " + best.pawn.LabelShort
                                  + " (role=" + best.role
                                  + ", d=" + best.distanceToCaster.ToString("F1")
-                                 + ", single=" + singleEnemy
-                                 + ", panic=" + panicState
-                                 + ")";
+                                 + ", adjacent=" + snap.enemiesAdjacent.Count
+                                 + ", hp=" + snap.casterHpFraction.ToString("F2") + ")";
 
             return action;
         }
