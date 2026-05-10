@@ -30,13 +30,14 @@ namespace SignalInterceptor.AI.Psycaster
 
         protected override ScoredAction ScoreInternal(PsycasterBrain brain, BattlefieldSnapshot snap)
         {
-            if (snap == null || snap.caster == null)
+            if (brain == null || snap == null || snap.caster == null)
                 return ScoredAction.None;
 
             if (snap.casterIsInvisible)
                 return ScoredAction.None;
 
             int rangedLos = 0;
+            int closeMelee = 0;
             EnemyAssessment bestRanged = null;
             float bestThreat = 0f;
 
@@ -49,6 +50,9 @@ namespace SignalInterceptor.AI.Psycaster
                     if (e == null || e.pawn == null)
                         continue;
 
+                    if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned)
+                        continue;
+
                     if (e.IsRanged && e.hasLineOfSight && e.canShootNow)
                     {
                         rangedLos++;
@@ -59,14 +63,41 @@ namespace SignalInterceptor.AI.Psycaster
                             bestRanged = e;
                         }
                     }
+
+                    bool meleeLike =
+                        e.IsMelee ||
+                        e.IsAnimal ||
+                        e.role == EnemyRole.Wimp;
+
+                    if (meleeLike && e.distanceToCaster <= 6f)
+                        closeMelee++;
                 }
             }
 
+            bool realRangedPressure =
+                rangedLos >= 2 ||
+                snap.totalIncomingDps >= 18f;
+
+            bool severeRangedPressure =
+                rangedLos >= 3 ||
+                snap.totalIncomingDps >= 28f;
+
+            bool meleePressure =
+                closeMelee >= 1 && snap.casterHpFraction <= 0.75f;
+
+            /*
+             * Defensive Invisibility:
+             * Survive stance alone is NOT enough anymore.
+             */
             bool defensive =
                 snap.casterHpFraction <= 0.55f ||
-                brain.CurrentStance == PsycasterStance.Survive ||
-                rangedLos >= 3 ||
-                snap.totalIncomingDps >= 24f;
+                severeRangedPressure ||
+                meleePressure ||
+                (
+                    brain.CurrentStance == PsycasterStance.Survive &&
+                    snap.casterHpFraction <= 0.78f &&
+                    (realRangedPressure || meleePressure)
+                );
 
             bool offensive =
                 brain.CurrentStance == PsycasterStance.Hunt &&
@@ -85,6 +116,12 @@ namespace SignalInterceptor.AI.Psycaster
                 raw += rangedLos * 2.0f;
                 raw += snap.totalIncomingDps / 5f;
                 raw += snap.casterEntropyFraction * 4f;
+
+                if (meleePressure)
+                    raw += 4f;
+
+                if (severeRangedPressure)
+                    raw += 6f;
             }
 
             if (offensive)
@@ -93,8 +130,8 @@ namespace SignalInterceptor.AI.Psycaster
                 raw += 4f;
             }
 
-            if (brain.CurrentStance == PsycasterStance.Survive)
-                raw += 10f;
+            if (brain.CurrentStance == PsycasterStance.Survive && defensive)
+                raw += 6f;
 
             ScoredAction action = new ScoredAction();
             action.abilityDefName = AbilityDefName;
@@ -107,7 +144,8 @@ namespace SignalInterceptor.AI.Psycaster
                 " hp=" + snap.casterHpFraction.ToString("F2") +
                 " entropy=" + snap.casterEntropyFraction.ToString("F2") +
                 " rangedLOS=" + rangedLos +
-                " incomingDps=" + snap.totalIncomingDps.ToString("F1");
+                " incomingDps=" + snap.totalIncomingDps.ToString("F1") +
+                " closeMelee=" + closeMelee;
 
             return action;
         }

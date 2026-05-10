@@ -64,6 +64,7 @@ namespace SignalInterceptor.AI.Psycaster
         private int nextDownedExecutionScanTick = -1;
 
         private int nextSoftLeashReturnTick = -1;
+        private int nextSoftLeashSuppressedLogTick = -1;
 
         private const int MapEdgeDangerDistance = 10;
 
@@ -904,8 +905,16 @@ namespace SignalInterceptor.AI.Psycaster
             Map map = caster.Map;
 
             float homeDist = caster.Position.DistanceTo(HomeAnchor);
-
             bool nearEdge = IsNearMapEdge(caster.Position, map, MapEdgeDangerDistance + 4);
+
+            /*
+             * Сначала дешёвый early-out.
+             * Если он не далеко от HomeAnchor и не у края карты — leash вообще не нужен.
+             * Это убирает лишнюю боевую проверку и лишние dev-логи.
+             */
+            if (homeDist < SoftHomeSoftRadius && !nearEdge)
+                return false;
+
             bool immediateDanger = HasImmediateLeashDanger(snap);
 
             /*
@@ -915,12 +924,9 @@ namespace SignalInterceptor.AI.Psycaster
                 return false;
 
             /*
-             * КРИТИЧЕСКИЙ ФИКС:
-             * Если есть живые враги и кастер уже находится в зоне боя/подхода,
-             * soft leash не должен перетягивать его обратно к HomeAnchor.
-             *
-             * Иначе получается цикл:
-             * idle-approach -> leash return -> idle-approach -> bullets -> recovery/death.
+             * Подавляем leash в активном бою.
+             * Важно: это проверяется только после homeDist/nearEdge,
+             * чтобы не логировать "suppressed by combat" каждый тик, когда leash вообще не нужен.
              */
             if (snap != null && snap.HasEnemies)
             {
@@ -934,18 +940,19 @@ namespace SignalInterceptor.AI.Psycaster
                     currentStance == PsycasterStance.Opening ||
                     currentStance == PsycasterStance.CrowdControl ||
                     currentStance == PsycasterStance.Hunt ||
-                    currentStance == PsycasterStance.Kite;
+                    currentStance == PsycasterStance.Kite ||
+                    currentStance == PsycasterStance.Survive;
 
                 /*
                  * В бою leash разрешён только если он реально у края карты
-                 * или вообще ушёл экстремально далеко.
-                 *
-                 * homeDist=70 при enemies=6 — это НЕ повод возвращать его домой.
+                 * или экстремально далеко от HomeAnchor.
                  */
                 if (combatRelevant && !nearEdge && homeDist < SoftHomeHardRadius + 20f)
                 {
-                    if (Prefs.DevMode)
+                    if (Prefs.DevMode && now >= nextSoftLeashSuppressedLogTick)
                     {
+                        nextSoftLeashSuppressedLogTick = now + 300;
+
                         Log.Message("[Signal Interceptor] Psycaster soft leash suppressed by combat: "
                                     + caster.LabelShort
                                     + " | homeDist=" + homeDist.ToString("F1")
@@ -958,12 +965,6 @@ namespace SignalInterceptor.AI.Psycaster
                     return false;
                 }
             }
-
-            /*
-             * Если он не слишком далеко и не у края карты — leash не нужен.
-             */
-            if (homeDist < SoftHomeSoftRadius && !nearEdge)
-                return false;
 
             /*
              * Если текущий Goto уже ведёт в нормальную внутреннюю клетку,
@@ -1036,6 +1037,167 @@ namespace SignalInterceptor.AI.Psycaster
 
             return nearest;
         }
+
+        private bool ShouldHoldRecoveryPosition(BattlefieldSnapshot snap)
+        {
+            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null)
+                return false;
+
+            /*
+             * Если реген ещё не активен — стоять нельзя, надо отрываться.
+             */
+            if (!CanRegenerateNow())
+                return false;
+
+            float hp = caster.health != null && caster.health.summaryHealth != null
+                ? caster.health.summaryHealth.SummaryHealthPercent
+                : 1f;
+
+            float nearestMeleeOrAnimal = 999f;
+            float nearestAny = 999f;
+            int rangedLos = 0;
+
+            Map map = caster.Map;
+
+            if (snap.enemies != null)
+            {
+                for (int i = 0; i < snap.enemies.Count; i++)
+                {
+                    EnemyAssessment e = snap.enemies[i];
+
+                    if (e == null || e.pawn == null)
+                        continue;
+
+                    Pawn p = e.pawn;
+
+                    if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
+                        continue;
+
+                    if (e.distanceToCaster < nearestAny)
+                        nearestAny = e.distanceToCaster;
+
+                    bool meleeLike =
+                        e.IsMelee ||
+                        e.IsAnimal ||
+                        e.role == EnemyRole.Wimp;
+
+                    if (meleeLike && e.distanceToCaster < nearestMeleeOrAnimal)
+                        nearestMeleeOrAnimal = e.distanceToCaster;
+
+                    if (e.IsRanged && e.hasLineOfSight && e.canShootNow)
+                        rangedLos++;
+                }
+            }
+
+            /*
+             * Если милишник/животное рядом — держаться нельзя.
+             */
+            if (nearestMeleeOrAnimal <= 12f)
+                return false;
+
+            /*
+             * Если по нему сейчас реально могут стрелять — лучше двигаться/защищаться.
+             */
+            if (rangedLos >= 1 && hp < 0.82f)
+                return false;
+
+            /*
+             * Если позиция сама по себе небезопасна — не холдим.
+             */
+            if (!IsRecoveryPositionStillSafe(caster.Position, snap))
+                return false;
+
+            /*
+             * Основной случай:
+             * он уже оторвался, механизмы работают, HP растёт.
+             * Не надо бегать дальше.
+             */
+            return true;
+        }
+
+        private bool ShouldHoldRecoveryPosition(BattlefieldSnapshot snap)
+        {
+            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null)
+                return false;
+
+            /*
+             * Если реген ещё не активен — стоять нельзя, надо отрываться.
+             */
+            if (!CanRegenerateNow())
+                return false;
+
+            float hp = caster.health != null && caster.health.summaryHealth != null
+                ? caster.health.summaryHealth.SummaryHealthPercent
+                : 1f;
+
+            float nearestMeleeOrAnimal = 999f;
+            float nearestAny = 999f;
+            int rangedLos = 0;
+
+            Map map = caster.Map;
+
+            if (snap.enemies != null)
+            {
+                for (int i = 0; i < snap.enemies.Count; i++)
+                {
+                    EnemyAssessment e = snap.enemies[i];
+
+                    if (e == null || e.pawn == null)
+                        continue;
+
+                    Pawn p = e.pawn;
+
+                    if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
+                        continue;
+
+                    if (e.distanceToCaster < nearestAny)
+                        nearestAny = e.distanceToCaster;
+
+                    bool meleeLike =
+                        e.IsMelee ||
+                        e.IsAnimal ||
+                        e.role == EnemyRole.Wimp;
+
+                    if (meleeLike && e.distanceToCaster < nearestMeleeOrAnimal)
+                        nearestMeleeOrAnimal = e.distanceToCaster;
+
+                    if (e.IsRanged && e.hasLineOfSight && e.canShootNow)
+                        rangedLos++;
+                }
+            }
+
+            /*
+             * Если милишник/животное рядом — держаться нельзя.
+             */
+            if (nearestMeleeOrAnimal <= 12f)
+                return false;
+
+            /*
+             * Если по нему сейчас реально могут стрелять — лучше двигаться/защищаться.
+             */
+            if (rangedLos >= 1 && hp < 0.82f)
+                return false;
+
+            /*
+             * Если позиция сама по себе небезопасна — не холдим.
+             */
+            if (!IsRecoveryPositionStillSafe(caster.Position, snap))
+                return false;
+
+            /*
+             * Основной случай:
+             * он уже оторвался, механизмы работают, HP растёт.
+             * Не надо бегать дальше.
+             */
+            return true;
+        }
+
 
         private int CountRangedEnemiesWithLosToCaster(BattlefieldSnapshot snap)
         {
@@ -1323,8 +1485,7 @@ namespace SignalInterceptor.AI.Psycaster
 
             /*
              * Если уже выполняется AttackMelee по упавшей пешке игрока —
-             * НЕ перезапускаем job каждый тик.
-             * Просто даём текущей работе продолжаться.
+             * не перезапускаем job.
              */
             Job curJob = caster.CurJob;
 
@@ -1349,7 +1510,10 @@ namespace SignalInterceptor.AI.Psycaster
             if (now < nextDownedExecutionScanTick)
                 return false;
 
-            nextDownedExecutionScanTick = now + 30;
+            /*
+             * Было 30 — слишком часто.
+             */
+            nextDownedExecutionScanTick = now + 180;
 
             if (!IsCasterFreeToAct())
                 return false;
@@ -1377,10 +1541,6 @@ namespace SignalInterceptor.AI.Psycaster
 
                 float distance = caster.Position.DistanceTo(pawn.Position);
 
-                /*
-                 * Не надо бежать через всю карту ради казни.
-                 * Если нужно агрессивнее — можно поднять до 35-45.
-                 */
                 if (distance > 28f)
                     continue;
 
@@ -1389,13 +1549,8 @@ namespace SignalInterceptor.AI.Psycaster
 
                 float score = 100f - distance;
 
-                /*
-                 * Почти мёртвых добивать приоритетнее.
-                 */
                 if (pawn.health != null && pawn.health.summaryHealth != null)
-                {
                     score += (1f - pawn.health.summaryHealth.SummaryHealthPercent) * 25f;
-                }
 
                 if (score > bestScore)
                 {
@@ -1413,13 +1568,9 @@ namespace SignalInterceptor.AI.Psycaster
                         target.LabelShort +
                         " | d=" + d.ToString("F1"));
 
-            /*
-             * Выдаём именно AttackMelee.
-             * Важно: не Wander, не Goto, не Cast, а нормальную melee-атаку по downed pawn.
-             */
             Job job = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
             job.locomotionUrgency = LocomotionUrgency.Sprint;
-            job.expiryInterval = 180;
+            job.expiryInterval = 300;
             job.checkOverrideOnExpire = true;
             job.killIncappedTarget = true;
             job.maxNumMeleeAttacks = 1;
@@ -1433,9 +1584,9 @@ namespace SignalInterceptor.AI.Psycaster
             );
 
             /*
-             * Небольшая задержка, чтобы не перезапускать приказ сразу же.
+             * Было 60 — теперь не спамим.
              */
-            nextDownedExecutionScanTick = now + 60;
+            nextDownedExecutionScanTick = now + 180;
 
             return true;
         }
@@ -1583,34 +1734,63 @@ namespace SignalInterceptor.AI.Psycaster
                 Log.Message("[Signal Interceptor] Psycaster entering recovery mode: "
                             + caster.LabelShort
                             + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
-                            + " | bleeding=" + HasDangerousBleeding()
-                            + " | canRegen=" + CanRegenerateNow()
                             + " | reason=" + GetRecoveryReasonForLog(snap));
+
+                return true;
             }
 
             if (!recoveryMode)
                 return false;
 
+            /*
+             * Новый выход из recovery:
+             * не держим режим, если HP уже достаточно безопасный,
+             * кровотечения нет, и нет настоящего давления.
+             */
             if (IsRecoveredEnough(snap))
             {
                 recoveryMode = false;
                 recoveryStartedTick = -1;
                 nextRecoveryThinkTick = -1;
 
-                Log.Message("[Signal Interceptor] Psycaster recovered and re-engaging: "
+                currentStance = StanceSelector.Select(snap, currentStance);
+                nextStanceReevalTick = now + Rand.RangeInclusive(120, 180);
+                nextActionSelectTick = now + Rand.RangeInclusive(30, 60);
+
+                Log.Message("[Signal Interceptor] Psycaster leaving recovery mode: "
                             + caster.LabelShort
                             + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
                             + " | bleeding=" + HasDangerousBleeding()
-                            + " | plateau=" + IsRecoveryPlateauLikely());
-
-                nextActionSelectTick = now + Rand.RangeInclusive(30, 60);
-                nextStanceReevalTick = now + Rand.RangeInclusive(30, 60);
+                            + " | pressure=" + HasRecoveryThreatPressure(snap));
 
                 return false;
             }
 
             if (now < nextRecoveryThinkTick)
                 return true;
+
+            /*
+             * Если реген может работать, давления нет, кровотечения нет —
+             * не надо каждые 90-150 тиков заново давать retreat/Goto.
+             * Держим позицию.
+             */
+            if (ShouldHoldRecoveryPosition(snap))
+            {
+                nextRecoveryThinkTick = now + Rand.RangeInclusive(180, 300);
+
+                if (Prefs.DevMode)
+                {
+                    HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
+
+                    Log.Message("[Signal Interceptor] Psycaster recovery hold position: "
+                                + caster.LabelShort
+                                + " | hp=" + caster.health.summaryHealth.SummaryHealthPercent.ToString("F2")
+                                + " | canRegen=" + (restore != null && restore.CanRegenerateNow)
+                                + " | ticksSinceDamage=" + (restore != null ? restore.TicksSinceDamage : -1));
+                }
+
+                return true;
+            }
 
             nextRecoveryThinkTick = now + Rand.RangeInclusive(90, 150);
 
@@ -1619,29 +1799,70 @@ namespace SignalInterceptor.AI.Psycaster
             return true;
         }
 
+        private bool ShouldHoldRecoveryPosition(BattlefieldSnapshot snap)
+        {
+            if (caster == null || caster.health == null)
+                return false;
+
+            if (HasDangerousBleeding())
+                return false;
+
+            if (HasRecoveryThreatPressure(snap))
+                return false;
+
+            float hp = caster.health.summaryHealth.SummaryHealthPercent;
+
+            HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
+
+            if (restore == null)
+                return false;
+
+            /*
+             * Если реген ещё заблокирован недавним уроном,
+             * можно немного подождать, но только если HP не критический.
+             */
+            if (!restore.CanRegenerateNow)
+                return hp >= 0.70f && restore.TicksSinceDamage >= 0;
+
+            /*
+             * Если HP уже безопасный — лучше выйти из recovery через IsRecoveredEnough.
+             */
+            if (hp >= 0.82f)
+                return false;
+
+            /*
+             * Основной случай:
+             * он ранен, но не под давлением, кровотечения нет,
+             * реген работает — не надо бегать и сбивать поведение.
+             */
+            return hp >= 0.45f;
+        }
+
         private void RunRecoveryMovement(BattlefieldSnapshot snap)
         {
             if (!IsCasterFreeToAct())
                 return;
 
             /*
-             * 1) Сначала пробуем recovery-kite Skip.
-             * Это спасает от животных/милишников, которые догоняют кастера во время лечения.
+             * Если можно безопасно регениться на месте — не стартуем retreat/Goto.
+             */
+            if (ShouldHoldRecoveryPosition(snap))
+                return;
+
+            /*
+             * 1) Сначала recovery-kite Skip.
              */
             if (snap != null && snap.HasEnemies && TryRecoveryKiteSkip(snap))
                 return;
 
             /*
-             * 2) Затем обычный emergency retreat.
-             * Он срабатывает на critical HP / surround / ranged pressure.
+             * 2) Потом emergency retreat.
              */
             if (snap != null && snap.HasEnemies && TryEmergencyRetreat(snap))
                 return;
 
             /*
-             * 3) Новый важный блок:
-             * если Skip недоступен, но кастер под ranged pressure,
-             * он должен прожать Invisibility / Smokepop, а не просто бежать пешком под пулями.
+             * 3) Defensive psycast только при реальном ranged pressure.
              */
             if (snap != null && snap.HasEnemies && TryRecoveryDefensivePsycast(snap))
                 return;
@@ -1653,7 +1874,7 @@ namespace SignalInterceptor.AI.Psycaster
                 return;
 
             /*
-             * 5) Если psy-tools не сработали, тогда обычный recovery retreat.
+             * 5) Fallback retreat.
              */
             IntVec3 retreatCell;
 
@@ -1710,7 +1931,6 @@ namespace SignalInterceptor.AI.Psycaster
                 out nearestShooterDist);
 
             int enemyCount = snap.enemies != null ? snap.enemies.Count : 0;
-
             bool singleEnemy = enemyCount <= 1;
 
             bool invisible = IsCasterInvisibleNow();
@@ -1732,36 +1952,44 @@ namespace SignalInterceptor.AI.Psycaster
             bool damaged = hp <= 0.78f;
 
             /*
-             * Нет реального ranged pressure — не тратим defensive psycast.
-             * Важно для шаттла: сам факт появления shuttle / дальнего стрелка
-             * больше не должен сразу прожимать Smokepop.
+             * Жёсткий guard:
+             * defensive psycast в recovery не нужен, если нет настоящего ranged pressure.
              */
             if (!underRangedPressure)
                 return false;
 
             /*
-             * Если уже invisible, второй defensive layer обычно не нужен.
-             * Разрешаем дальнейшую защиту только при настоящей панике.
+             * Почти полный HP — не тратить Invisibility/Smoke,
+             * кроме настоящей паники под фокусом стрелков.
              */
-            if (invisible && !panicRangedPressure && !critical)
+            if (hp >= 0.88f && !panicRangedPressure)
                 return false;
 
             /*
-             * Один стрелок против почти полного HP не должен вызывать smoke/invis.
+             * Уже invisible — второй defensive layer только при критической панике.
+             */
+            if (invisible && !(critical && panicRangedPressure))
+                return false;
+
+            /*
+             * Один стрелок против нормального HP не должен вызывать защитные касты.
              */
             if (singleEnemy && hp >= 0.80f && !panicRangedPressure)
                 return false;
 
             /*
-             * На высоком HP defensive psycast разрешён только при реально тяжёлом огне.
+             * 1) Invisibility — только если реально опасно.
              */
-            if (hp >= 0.90f && !panicRangedPressure)
-                return false;
+            bool shouldCastInvisibility =
+                !invisible &&
+                (
+                    critical ||
+                    dangerous ||
+                    severeRangedPressure ||
+                    (damaged && panicRangedPressure)
+                );
 
-            /*
-             * 1) Invisibility — panic button.
-             */
-            if ((critical || dangerous || severeRangedPressure) && !invisible)
+            if (shouldCastInvisibility)
             {
                 if (TryCastRecoverySelfAbility("Invisibility", PsycasterTuning.InvisibilitySoftCooldownMin, PsycasterTuning.InvisibilitySoftCooldownMax))
                 {
@@ -1780,17 +2008,18 @@ namespace SignalInterceptor.AI.Psycaster
             }
 
             /*
-             * 2) Smokepop.
-             *
-             * Не кастуем smoke поверх invisibility, кроме критического panic.
-             * Не кастуем smoke от одного далёкого формального LOS.
+             * 2) Smokepop — только под реальным стрелковым давлением.
              */
-            bool allowSmokeWhileInvisible =
-                invisible && critical && panicRangedPressure;
+            bool shouldCastSmokepop =
+                rangedPressure >= 1 &&
+                (
+                    critical ||
+                    dangerous ||
+                    panicRangedPressure ||
+                    (damaged && severeRangedPressure)
+                );
 
-            if ((!invisible || allowSmokeWhileInvisible) &&
-                (critical || dangerous || damaged || panicRangedPressure) &&
-                rangedPressure >= 1)
+            if (shouldCastSmokepop)
             {
                 if (TryCastRecoverySelfAbility("Smokepop", PsycasterTuning.SmokepopSoftCooldownMin, PsycasterTuning.SmokepopSoftCooldownMax))
                 {
@@ -2617,30 +2846,65 @@ namespace SignalInterceptor.AI.Psycaster
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
+            bool bleeding = HasDangerousBleeding();
+            bool pressure = HasRecoveryThreatPressure(snap);
+
             /*
-             * Нормальный выход: почти восстановился.
+             * Нормальный чистый выход.
              */
-            if (hp >= 0.90f && !HasDangerousBleeding())
+            if (hp >= 0.92f && !bleeding)
                 return true;
 
             /*
-             * Осторожный выход: достаточно восстановился и рядом нет давления.
+             * Осторожный выход:
+             * HP достаточно высокий, крови нет, давления нет.
              */
-            if (hp >= 0.82f && !HasDangerousBleeding() && !HasRecoveryThreatPressure(snap))
+            if (hp >= 0.82f && !bleeding && !pressure)
                 return true;
 
             /*
-             * Важный фикс:
-             * если конечность отрублена, SummaryHealthPercent может навсегда застрять
-             * на 0.55-0.70. В таком случае нельзя требовать 0.82/0.90.
-             *
-             * Если давно не получал урон, реген доступен, рядом нет угрозы,
-             * а HP не растёт до старого порога — считаем это плато и возвращаемся в бой.
+             * Если остались только дальние melee/animal без реального давления,
+             * не держим recovery бесконечно.
              */
-            if (IsRecoveryPlateauLikely() && !HasRecoveryThreatPressure(snap))
+            if (hp >= 0.78f && !bleeding && !pressure && HasOnlyMeleeOrAnimalEnemies(snap))
+                return true;
+
+            /*
+             * Plateau после ампутации/перманентного cap-а.
+             * Но выходить можно только если:
+             * - нет опасного кровотечения;
+             * - нет давления.
+             */
+            if (!bleeding && !pressure && IsRecoveryPlateauLikely())
                 return true;
 
             return false;
+        }
+
+        private bool HasOnlyMeleeOrAnimalEnemies(BattlefieldSnapshot snap)
+        {
+            if (snap == null || snap.enemies == null || snap.enemies.Count == 0)
+                return false;
+
+            bool hasStandingEnemy = false;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned)
+                    continue;
+
+                hasStandingEnemy = true;
+
+                if (e.IsRanged)
+                    return false;
+            }
+
+            return hasStandingEnemy;
         }
 
         private bool IsRecoveryPlateauLikely()
