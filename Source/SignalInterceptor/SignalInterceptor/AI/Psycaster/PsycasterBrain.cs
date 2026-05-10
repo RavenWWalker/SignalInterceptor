@@ -173,7 +173,8 @@ namespace SignalInterceptor.AI.Psycaster
 
             if (!focusBuffApplied && now >= graceUntilTick)
             {
-                if (gc.TryCastSelfPsyAbility_Public(caster, "Focus"))
+                if (HasEnoughPsyfocusForAbility("Focus") &&
+                    gc.TryCastSelfPsyAbility_Public(caster, "Focus"))
                 {
                     focusBuffApplied = true;
                     nextActionSelectTick = now + PsycasterTuning.CastWarmupShort + 30;
@@ -2541,6 +2542,19 @@ namespace SignalInterceptor.AI.Psycaster
             if (skipDef == null)
                 return false;
 
+            if (!HasEnoughPsyfocusForAbility("Skip"))
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster emergency-retreat Skip blocked by psyfocus: "
+                                + caster.LabelShort
+                                + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                + " | required=" + GetMinimumPsyfocusForAbility("Skip").ToString("F2"));
+                }
+
+                return false;
+            }
+
             object ability = GetPawnAbilityObject(skipDef);
 
             if (ability == null)
@@ -2904,19 +2918,46 @@ namespace SignalInterceptor.AI.Psycaster
 
         private void ActionSelectAndExecute(BattlefieldSnapshot snap)
         {
-            // Пробежаться по скорерам, выбрать максимум.
             ScoredAction best = ScoredAction.None;
 
             for (int i = 0; i < scorers.Count; i++)
             {
                 IAbilityScorer scorer = scorers[i];
-                if (scorer == null) continue;
+
+                if (scorer == null)
+                    continue;
 
                 if (!scorer.IsAvailable(this, snap))
                     continue;
 
                 ScoredAction candidate = scorer.Score(this, snap);
-                if (candidate == null || !candidate.IsValid) continue;
+
+                if (candidate == null || !candidate.IsValid)
+                    continue;
+
+                /*
+                 * Дополнительный слой проверки psyfocus.
+                 *
+                 * AbilityScorerBase уже проверяет MinPsyfocusFraction,
+                 * но там у разных scorers могут быть мягкие пороги.
+                 * Здесь проверяем единый brain-level порог:
+                 * Skip=0.20, ManhunterPulse=0.30, BerserkPulse=0.28 и т.д.
+                 */
+                if (candidate.abilityDefName != "MeleeAttack_Pseudo" &&
+                    !HasEnoughPsyfocusForAbility(candidate.abilityDefName))
+                {
+                    if (Prefs.DevMode)
+                    {
+                        Log.Message("[Signal Interceptor] Psycaster candidate skipped by psyfocus: "
+                                    + candidate.abilityDefName
+                                    + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                    + " | required=" + GetMinimumPsyfocusForAbility(candidate.abilityDefName).ToString("F2")
+                                    + " | score=" + candidate.score.ToString("F2")
+                                    + " | reason=" + (candidate.debugReason ?? ""));
+                    }
+
+                    continue;
+                }
 
                 if (candidate.score > best.score)
                     best = candidate;
@@ -2929,9 +2970,6 @@ namespace SignalInterceptor.AI.Psycaster
                 return;
             }
 
-            // FALLBACK на время Пачки 3: скорерров ещё нет, поэтому просто
-            // дёрнем самый банальный путь — атаковать ближайшего цели в melee.
-            // Когда подключим Пачки 4-6 — этот fallback станет почти недостижимым.
             FallbackBasicAttack(snap);
         }
 
@@ -2939,6 +2977,22 @@ namespace SignalInterceptor.AI.Psycaster
         {
             if (action == null || !action.IsValid)
                 return;
+
+            if (action.abilityDefName != "MeleeAttack_Pseudo" &&
+                !HasEnoughPsyfocusForAbility(action.abilityDefName))
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster action blocked by psyfocus: "
+                                + action.abilityDefName
+                                + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                + " | required=" + GetMinimumPsyfocusForAbility(action.abilityDefName).ToString("F2")
+                                + " | score=" + action.score.ToString("F2")
+                                + " | reason=" + (action.debugReason ?? ""));
+                }
+
+                return;
+            }
 
             bool casted = false;
 
