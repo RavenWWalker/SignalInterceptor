@@ -71,12 +71,15 @@ namespace SignalInterceptor
                 return;
 
             /*
-             * ВАЖНЫЙ ФИКС:
-             * Перед обычным лечением удаляем кровоточащие Hediff_Injury,
-             * которые остались на уже отсутствующих частях тела.
+             * Перед обычным лечением запечатываем два типа кровотечения:
              *
-             * Это не лечит missing part и не возвращает конечность.
-             * Это только "запечатывает" фантомное кровотечение после ампутации.
+             * 1) Hediff_Injury, висящие на уже отсутствующих частях тела.
+             *    Это фантомные раны после ампутации.
+             *
+             * 2) Hediff_MissingPart с активным BleedRate.
+             *    Именно это чаще всего и есть кровотечение от отрубленной конечности.
+             *    Такие hediff'ы нельзя удалять, иначе конечность "вернётся".
+             *    Их нужно сделать не fresh через Tended()/сброс fresh-флага.
              */
             bool sealedMissingPartBleeding = SealBleedingOnMissingParts(pawn);
 
@@ -93,7 +96,10 @@ namespace SignalInterceptor
 
                 if (!healed)
                     healed = HealAnyInjury(pawn);
+            }
 
+            if (needsRepair || sealedMissingPartBleeding)
+            {
                 ReduceBloodLoss(pawn);
             }
 
@@ -116,6 +122,15 @@ namespace SignalInterceptor
 
             if (pawn.health.hediffSet.GetFirstHediffOfDef(HediffDefOf.BloodLoss) != null)
                 return true;
+
+            if (pawn.health.hediffSet.hediffs
+                .OfType<Hediff_MissingPart>()
+                .Any(h =>
+                    h != null &&
+                    h.BleedRate > 0.001f))
+            {
+                return true;
+            }
 
             return pawn.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
@@ -190,13 +205,13 @@ namespace SignalInterceptor
             if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
                 return false;
 
-            bool removedAny = false;
+            bool sealedAny = false;
 
             /*
-             * ToList() обязателен, потому что мы можем удалять hediff'ы
-             * из исходной коллекции во время прохода.
+             * Старый случай: Hediff_Injury остался висеть на части,
+             * которая уже отсутствует или имеет отсутствующего родителя.
              */
-            var injuries = pawn.health.hediffSet.hediffs
+            var phantomInjuries = pawn.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
                 .Where(h =>
                     h != null &&
@@ -207,33 +222,50 @@ namespace SignalInterceptor
                 .ThenByDescending(h => h.Severity)
                 .ToList();
 
-            if (injuries.Count <= 0)
-                return false;
-
-            /*
-             * За один interval можно убрать несколько фантомных кровотечений.
-             * Это не обычное лечение, а cleanup невалидных bleeding injuries.
-             */
-            for (int i = 0; i < injuries.Count; i++)
+            for (int i = 0; i < phantomInjuries.Count; i++)
             {
-                Hediff_Injury injury = injuries[i];
+                Hediff_Injury injury = phantomInjuries[i];
 
                 if (injury == null)
                     continue;
 
-                /*
-                 * Дополнительная защита:
-                 * если hediff уже был удалён чем-то другим между ToList() и этим местом,
-                 * не пытаемся удалить повторно.
-                 */
                 if (!pawn.health.hediffSet.hediffs.Contains(injury))
                     continue;
 
                 RemovePhantomBleedingInjury(pawn, injury, "SealBleedingOnMissingParts");
-                removedAny = true;
+                sealedAny = true;
             }
 
-            return removedAny;
+            /*
+             * Главный фикс: свежеотрубленные части.
+             *
+             * Hediff_MissingPart сам может иметь BleedRate.
+             * Его нельзя удалять, иначе мы удалим факт потери конечности.
+             * Нужно только остановить кровотечение.
+             */
+            var bleedingMissingParts = pawn.health.hediffSet.hediffs
+                .OfType<Hediff_MissingPart>()
+                .Where(h =>
+                    h != null &&
+                    h.BleedRate > 0.001f)
+                .OrderByDescending(h => h.BleedRate)
+                .ToList();
+
+            for (int i = 0; i < bleedingMissingParts.Count; i++)
+            {
+                Hediff_MissingPart missingPart = bleedingMissingParts[i];
+
+                if (missingPart == null)
+                    continue;
+
+                if (!pawn.health.hediffSet.hediffs.Contains(missingPart))
+                    continue;
+
+                SealMissingPartBleeding(pawn, missingPart, "SealBleedingOnMissingParts");
+                sealedAny = true;
+            }
+
+            return sealedAny;
         }
 
         private void RemovePhantomBleedingInjury(Pawn pawn, Hediff_Injury injury, string source)
@@ -241,10 +273,6 @@ namespace SignalInterceptor
             if (pawn == null || pawn.health == null || pawn.health.hediffSet == null || injury == null)
                 return;
 
-            /*
-             * Hediff не имеет Destroyed.
-             * Проверяем, что injury всё ещё находится в hediffSet.
-             */
             if (!pawn.health.hediffSet.hediffs.Contains(injury))
                 return;
 
@@ -270,6 +298,80 @@ namespace SignalInterceptor
                     " | severity=" + severity.ToString("F2") +
                     " | bleedRate=" + bleedRate.ToString("F4") +
                     " | ticksSinceDamage=" + TicksSinceDamage);
+            }
+        }
+
+        private void SealMissingPartBleeding(Pawn pawn, Hediff_MissingPart missingPart, string source)
+        {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null || missingPart == null)
+                return;
+
+            if (!pawn.health.hediffSet.hediffs.Contains(missingPart))
+                return;
+
+            float bleedRateBefore = missingPart.BleedRate;
+            float severity = missingPart.Severity;
+            string partLabel = missingPart.Part != null ? missingPart.Part.Label : "null";
+            string label = missingPart.Label;
+
+            /*
+             * В RimWorld свежеотрубленная часть перестаёт кровоточить после tending.
+             * Это не лечит и не возвращает часть тела.
+             */
+            missingPart.Tended(1f, 1f);
+
+            /*
+             * Защита на случай, если конкретная версия игры/мод меняет реализацию.
+             * Принудительно сбрасываем fresh-флаг через reflection.
+             */
+            if (missingPart.BleedRate > 0.001f)
+            {
+                ForceMissingPartNotFresh(missingPart);
+            }
+
+            int now = Find.TickManager.TicksGame;
+
+            if (Prefs.DevMode && now >= nextBleedingSealLogTick)
+            {
+                nextBleedingSealLogTick = now + 120;
+
+                Log.Message(
+                    "[Signal Interceptor] Restoring Mechanisms sealed missing part bleeding: " +
+                    pawn.LabelShort +
+                    " | source=" + source +
+                    " | hediff=" + label +
+                    " | part=" + partLabel +
+                    " | severity=" + severity.ToString("F2") +
+                    " | bleedRateBefore=" + bleedRateBefore.ToString("F4") +
+                    " | bleedRateAfter=" + missingPart.BleedRate.ToString("F4") +
+                    " | ticksSinceDamage=" + TicksSinceDamage);
+            }
+        }
+
+        private void ForceMissingPartNotFresh(Hediff_MissingPart missingPart)
+        {
+            if (missingPart == null)
+                return;
+
+            System.Type type = typeof(Hediff_MissingPart);
+
+            System.Reflection.FieldInfo field =
+                type.GetField("isFresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic) ??
+                type.GetField("IsFresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+
+            if (field != null && field.FieldType == typeof(bool))
+            {
+                field.SetValue(missingPart, false);
+                return;
+            }
+
+            System.Reflection.PropertyInfo property =
+                type.GetProperty("isFresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic) ??
+                type.GetProperty("IsFresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+
+            if (property != null && property.PropertyType == typeof(bool) && property.CanWrite)
+            {
+                property.SetValue(missingPart, false, null);
             }
         }
 
@@ -318,6 +420,15 @@ namespace SignalInterceptor
 
             if (pawn.health == null || pawn.health.hediffSet == null)
                 return false;
+
+            if (pawn.health.hediffSet.hediffs
+                .OfType<Hediff_MissingPart>()
+                .Any(h =>
+                    h != null &&
+                    h.BleedRate > 0.01f))
+            {
+                return true;
+            }
 
             return pawn.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
