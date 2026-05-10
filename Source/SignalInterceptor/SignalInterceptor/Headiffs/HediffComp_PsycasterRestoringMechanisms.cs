@@ -8,6 +8,7 @@ namespace SignalInterceptor
     {
         private int lastDamageTakenTick = -999999;
         private int nextHealTick;
+        private int nextBleedingSealLogTick = -1;
 
         public HediffCompProperties_PsycasterRestoringMechanisms Props
         {
@@ -69,24 +70,42 @@ namespace SignalInterceptor
             if (!CanRegenerateNow)
                 return;
 
-            if (!NeedsBodyRepair(pawn))
+            /*
+             * ВАЖНЫЙ ФИКС:
+             * Перед обычным лечением удаляем кровоточащие Hediff_Injury,
+             * которые остались на уже отсутствующих частях тела.
+             *
+             * Это не лечит missing part и не возвращает конечность.
+             * Это только "запечатывает" фантомное кровотечение после ампутации.
+             */
+            bool sealedMissingPartBleeding = SealBleedingOnMissingParts(pawn);
+
+            bool needsRepair = NeedsBodyRepair(pawn);
+
+            if (!needsRepair && !sealedMissingPartBleeding)
                 return;
 
-            bool healed = HealBleedingFirst(pawn);
+            bool healed = false;
 
-            if (!healed)
-                healed = HealAnyInjury(pawn);
+            if (needsRepair)
+            {
+                healed = HealBleedingFirst(pawn);
 
-            ReduceBloodLoss(pawn);
+                if (!healed)
+                    healed = HealAnyInjury(pawn);
 
-            if (healed && Prefs.DevMode &&
+                ReduceBloodLoss(pawn);
+            }
+
+            if ((healed || sealedMissingPartBleeding) && Prefs.DevMode &&
                 (pawn.health.summaryHealth.SummaryHealthPercent < 0.99f || HasDangerousBleeding()))
             {
                 Log.Message(
                     "[Signal Interceptor] Restoring Mechanisms tick: " +
                     pawn.LabelShort +
                     " | hp=" + pawn.health.summaryHealth.SummaryHealthPercent.ToString("F2") +
-                    " | ticksSinceDamage=" + TicksSinceDamage);
+                    " | ticksSinceDamage=" + TicksSinceDamage +
+                    " | sealedMissingPartBleeding=" + sealedMissingPartBleeding);
             }
         }
 
@@ -100,20 +119,42 @@ namespace SignalInterceptor
 
             return pawn.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
-                .Any(h => h != null && h.Severity > 0.05f);
+                .Any(h =>
+                    h != null &&
+                    h.Severity > 0f &&
+                    (
+                        h.Severity > 0.05f ||
+                        h.BleedRate > 0.001f ||
+                        IsOnMissingPartOrMissingAncestor(pawn, h.Part)
+                    ));
         }
 
         private bool HealBleedingFirst(Pawn pawn)
         {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return false;
+
             Hediff_Injury injury = pawn.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
                 .Where(h => h != null && h.Severity > 0f && h.BleedRate > 0.001f)
-                .OrderByDescending(h => h.BleedRate)
+                .OrderByDescending(h => IsOnMissingPartOrMissingAncestor(pawn, h.Part))
+                .ThenByDescending(h => h.BleedRate)
                 .ThenByDescending(h => h.Severity)
                 .FirstOrDefault();
 
             if (injury == null)
                 return false;
+
+            /*
+             * Если рана находится на уже отсутствующей части тела —
+             * это фантомное кровотечение после ампутации.
+             * Его надо удалить, а не пытаться лечить численно.
+             */
+            if (IsOnMissingPartOrMissingAncestor(pawn, injury.Part))
+            {
+                RemovePhantomBleedingInjury(pawn, injury, "HealBleedingFirst");
+                return true;
+            }
 
             injury.Heal(Props.healAmount * Props.bleedingHealMultiplier);
             return true;
@@ -121,17 +162,136 @@ namespace SignalInterceptor
 
         private bool HealAnyInjury(Pawn pawn)
         {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return false;
+
             Hediff_Injury injury = pawn.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
                 .Where(h => h != null && h.Severity > 0f)
-                .OrderByDescending(h => h.Severity)
+                .OrderByDescending(h => IsOnMissingPartOrMissingAncestor(pawn, h.Part))
+                .ThenByDescending(h => h.Severity)
                 .FirstOrDefault();
 
             if (injury == null)
                 return false;
 
+            if (IsOnMissingPartOrMissingAncestor(pawn, injury.Part))
+            {
+                RemovePhantomBleedingInjury(pawn, injury, "HealAnyInjury");
+                return true;
+            }
+
             injury.Heal(Props.healAmount);
             return true;
+        }
+
+        private bool SealBleedingOnMissingParts(Pawn pawn)
+        {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return false;
+
+            bool removedAny = false;
+
+            /*
+             * ToList() обязателен, потому что мы можем удалять hediff'ы
+             * из исходной коллекции во время прохода.
+             */
+            var injuries = pawn.health.hediffSet.hediffs
+                .OfType<Hediff_Injury>()
+                .Where(h =>
+                    h != null &&
+                    h.Severity > 0f &&
+                    h.BleedRate > 0.001f &&
+                    IsOnMissingPartOrMissingAncestor(pawn, h.Part))
+                .OrderByDescending(h => h.BleedRate)
+                .ThenByDescending(h => h.Severity)
+                .ToList();
+
+            if (injuries.Count <= 0)
+                return false;
+
+            /*
+             * За один interval можно убрать несколько фантомных кровотечений.
+             * Это не обычное лечение, а cleanup невалидных bleeding injuries.
+             */
+            for (int i = 0; i < injuries.Count; i++)
+            {
+                Hediff_Injury injury = injuries[i];
+
+                if (injury == null)
+                    continue;
+
+                /*
+                 * Дополнительная защита:
+                 * если hediff уже был удалён чем-то другим между ToList() и этим местом,
+                 * не пытаемся удалить повторно.
+                 */
+                if (!pawn.health.hediffSet.hediffs.Contains(injury))
+                    continue;
+
+                RemovePhantomBleedingInjury(pawn, injury, "SealBleedingOnMissingParts");
+                removedAny = true;
+            }
+
+            return removedAny;
+        }
+
+        private void RemovePhantomBleedingInjury(Pawn pawn, Hediff_Injury injury, string source)
+        {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null || injury == null)
+                return;
+
+            /*
+             * Hediff не имеет Destroyed.
+             * Проверяем, что injury всё ещё находится в hediffSet.
+             */
+            if (!pawn.health.hediffSet.hediffs.Contains(injury))
+                return;
+
+            float bleedRate = injury.BleedRate;
+            float severity = injury.Severity;
+            string partLabel = injury.Part != null ? injury.Part.Label : "null";
+            string injuryLabel = injury.Label;
+
+            pawn.health.RemoveHediff(injury);
+
+            int now = Find.TickManager.TicksGame;
+
+            if (Prefs.DevMode && now >= nextBleedingSealLogTick)
+            {
+                nextBleedingSealLogTick = now + 120;
+
+                Log.Message(
+                    "[Signal Interceptor] Restoring Mechanisms sealed phantom bleeding: " +
+                    pawn.LabelShort +
+                    " | source=" + source +
+                    " | injury=" + injuryLabel +
+                    " | part=" + partLabel +
+                    " | severity=" + severity.ToString("F2") +
+                    " | bleedRate=" + bleedRate.ToString("F4") +
+                    " | ticksSinceDamage=" + TicksSinceDamage);
+            }
+        }
+
+        private bool IsOnMissingPartOrMissingAncestor(Pawn pawn, BodyPartRecord part)
+        {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return false;
+
+            if (part == null)
+                return false;
+
+            BodyPartRecord cur = part;
+
+            while (cur != null)
+            {
+                if (pawn.health.hediffSet.PartIsMissing(cur))
+                    return true;
+
+                cur = cur.parent;
+            }
+
+            return false;
         }
 
         private void ReduceBloodLoss(Pawn pawn)
@@ -156,9 +316,15 @@ namespace SignalInterceptor
             if (pawn == null || pawn.Destroyed || pawn.Dead)
                 return false;
 
+            if (pawn.health == null || pawn.health.hediffSet == null)
+                return false;
+
             return pawn.health.hediffSet.hediffs
                 .OfType<Hediff_Injury>()
-                .Any(h => h != null && h.Severity > 0f && h.BleedRate > 0.01f);
+                .Any(h =>
+                    h != null &&
+                    h.Severity > 0f &&
+                    h.BleedRate > 0.01f);
         }
 
         public override void CompExposeData()
@@ -167,6 +333,7 @@ namespace SignalInterceptor
 
             Scribe_Values.Look(ref lastDamageTakenTick, "lastDamageTakenTick", -999999);
             Scribe_Values.Look(ref nextHealTick, "nextHealTick", 0);
+            Scribe_Values.Look(ref nextBleedingSealLogTick, "nextBleedingSealLogTick", -1);
         }
     }
 }

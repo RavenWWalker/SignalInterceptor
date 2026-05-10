@@ -33,10 +33,12 @@ namespace SignalInterceptor.AI.Psycaster
 
         protected override ScoredAction ScoreInternal(PsycasterBrain brain, BattlefieldSnapshot snap)
         {
-            if (snap == null || snap.caster == null)
+            if (brain == null || snap == null || snap.caster == null)
                 return ScoredAction.None;
 
-            int rangedLos = 0;
+            int rangedPressure = 0;
+            float meaningfulIncomingDps = 0f;
+            float nearestShooterDist = 999f;
 
             if (snap.enemies != null)
             {
@@ -47,42 +49,75 @@ namespace SignalInterceptor.AI.Psycaster
                     if (e == null || e.pawn == null)
                         continue;
 
-                    if (e.IsRanged && e.hasLineOfSight && e.canShootNow)
-                        rangedLos++;
+                    if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned)
+                        continue;
+
+                    if (!e.IsRanged)
+                        continue;
+
+                    if (!e.hasLineOfSight)
+                        continue;
+
+                    if (!e.canShootNow)
+                        continue;
+
+                    if (e.estimatedDps <= 0.1f)
+                        continue;
+
+                    float practicalRange = UnityEngine.Mathf.Max(18f, e.weaponRange + 2f);
+
+                    if (e.distanceToCaster > practicalRange)
+                        continue;
+
+                    rangedPressure++;
+                    meaningfulIncomingDps += e.estimatedDps;
+
+                    if (e.distanceToCaster < nearestShooterDist)
+                        nearestShooterDist = e.distanceToCaster;
                 }
             }
+
+            bool invisible =
+                snap.casterIsInvisible ||
+                HasInvisibilityHediff(snap.caster);
 
             bool fullHp = snap.casterHpFraction >= 0.95f;
             bool healthy = snap.casterHpFraction >= 0.80f;
             bool lowHp = snap.casterHpFraction <= 0.65f;
             bool damaged = snap.casterHpFraction <= 0.80f;
+            bool critical = snap.casterHpFraction <= 0.45f;
+
             bool survive = brain.CurrentStance == PsycasterStance.Survive;
 
             bool moderateRangedPressure =
-                rangedLos >= 2 ||
-                snap.totalIncomingDps >= 24f;
+                rangedPressure >= 2 ||
+                meaningfulIncomingDps >= 24f;
 
             bool severeRangedPressure =
-                rangedLos >= 3 ||
-                snap.totalIncomingDps >= 55f;
+                rangedPressure >= 3 ||
+                meaningfulIncomingDps >= 55f;
 
             /*
-             * Главный фикс:
-             * На полном HP не жмём Smokepop против одного стрелка.
-             * Пусть сначала работают Invisibility / BlindingPulse / BerserkPulse / Wallraise.
+             * Нет реального стрелкового давления — smoke не нужен.
+             */
+            if (rangedPressure <= 0 && meaningfulIncomingDps < 10f)
+                return ScoredAction.None;
+
+            /*
+             * Полный HP: smoke только под тяжёлым огнём.
              */
             if (fullHp && !severeRangedPressure)
                 return ScoredAction.None;
 
             /*
-             * Если уже невидим, smoke обычно лишний.
-             * Оставляем smoke только при действительно тяжёлом огне.
+             * Invisibility уже активна.
+             * Smoke поверх invisibility — только если это реально критическая паника.
              */
-            if (snap.casterIsInvisible && !severeRangedPressure && !lowHp)
+            if (invisible && !(critical && severeRangedPressure))
                 return ScoredAction.None;
 
             bool hpTrigger =
-                lowHp && rangedLos >= 1;
+                lowHp && rangedPressure >= 1;
 
             bool pressureTrigger =
                 damaged && moderateRangedPressure;
@@ -91,15 +126,15 @@ namespace SignalInterceptor.AI.Psycaster
                 severeRangedPressure;
 
             bool surviveTrigger =
-                survive && rangedLos >= 1 && snap.casterHpFraction <= 0.85f;
+                survive && rangedPressure >= 1 && snap.casterHpFraction <= 0.85f;
 
             if (!hpTrigger && !pressureTrigger && !panicTrigger && !surviveTrigger)
                 return ScoredAction.None;
 
             float raw = 3f;
 
-            raw += rangedLos * 1.5f;
-            raw += snap.totalIncomingDps / 9f;
+            raw += rangedPressure * 1.5f;
+            raw += meaningfulIncomingDps / 9f;
 
             if (hpTrigger)
                 raw += (0.70f - snap.casterHpFraction) * 16f;
@@ -114,14 +149,13 @@ namespace SignalInterceptor.AI.Psycaster
                 raw += 6f;
 
             /*
-             * На высоком HP smoke должен проигрывать активному контролю,
-             * если давление не экстремальное.
+             * На высоком HP smoke должен проигрывать контролю/агрессии.
              */
             if (healthy && !severeRangedPressure)
-                raw *= 0.55f;
+                raw *= 0.45f;
 
             if (snap.casterHasSkipshield)
-                raw *= 0.45f;
+                raw *= 0.35f;
 
             ScoredAction action = new ScoredAction();
             action.abilityDefName = AbilityDefName;
@@ -130,12 +164,39 @@ namespace SignalInterceptor.AI.Psycaster
             action.score = raw;
             action.debugReason =
                 "Smokepop hp=" + snap.casterHpFraction.ToString("F2") +
-                " rangedLOS=" + rangedLos +
-                " incomingDps=" + snap.totalIncomingDps.ToString("F1") +
-                " invisible=" + snap.casterIsInvisible +
+                " rangedPressure=" + rangedPressure +
+                " meaningfulDps=" + meaningfulIncomingDps.ToString("F1") +
+                " nearestShooter=" + nearestShooterDist.ToString("F1") +
+                " invisible=" + invisible +
                 " skipshield=" + snap.casterHasSkipshield;
 
             return action;
+        }
+        private bool HasInvisibilityHediff(Pawn pawn)
+        {
+            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+                return false;
+
+            for (int i = 0; i < pawn.health.hediffSet.hediffs.Count; i++)
+            {
+                Hediff h = pawn.health.hediffSet.hediffs[i];
+
+                if (h == null || h.def == null || string.IsNullOrEmpty(h.def.defName))
+                    continue;
+
+                string defName = h.def.defName;
+
+                if (defName == "PsychicInvisibility")
+                    return true;
+
+                if (defName.IndexOf("Invisibility", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+                if (defName.IndexOf("Invisible", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+
+            return false;
         }
     }
 }

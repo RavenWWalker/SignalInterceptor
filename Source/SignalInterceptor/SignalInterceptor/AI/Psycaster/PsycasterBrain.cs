@@ -204,6 +204,13 @@ namespace SignalInterceptor.AI.Psycaster
                 return;
 
             /*
+             * Мягкий leash после recovery/pre-engage.
+             * Важно: сам TryRunSoftLeashReturn теперь подавляется активным боем.
+             */
+            if (IsCasterFreeToAct() && TryRunPreEngageInvisibility(snap))
+                return;
+
+            /*
              * Мягкий leash после recovery.
              *
              * Важное отличие от старой логики:
@@ -316,6 +323,227 @@ namespace SignalInterceptor.AI.Psycaster
         // ============================================================
         // Выбор действия (action-select)
         // ============================================================
+
+        private bool TryRunPreEngageInvisibility(BattlefieldSnapshot snap)
+        {
+            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null || !snap.HasEnemies)
+                return false;
+
+            if (!IsCasterFreeToAct())
+                return false;
+
+            if (IsCasterInvisibleNow())
+                return false;
+
+            if (IsOnSoftCooldown("Invisibility"))
+                return false;
+
+            /*
+             * Не ломаем активный melee/kill contract.
+             */
+            int now = Find.TickManager.TicksGame;
+
+            if (HasActiveKillContract)
+                return false;
+
+            if (pendingMeleeTargetThingId >= 0 && pendingMeleeUntilTick > now)
+                return false;
+
+            float hp = caster.health != null && caster.health.summaryHealth != null
+                ? caster.health.summaryHealth.SummaryHealthPercent
+                : 1f;
+
+            /*
+             * Если он уже сильно ранен — это не pre-engage.
+             * Тогда пусть работает recovery logic.
+             */
+            if (hp <= 0.70f)
+                return false;
+
+            int enemyCount = 0;
+            int rangedCount = 0;
+            int rangedLos = 0;
+            int meleeLikeCount = 0;
+            float nearestEnemy = 999f;
+            float nearestRanged = 999f;
+            float totalRangedDps = 0f;
+
+            Map map = caster.Map;
+
+            if (snap.enemies != null)
+            {
+                for (int i = 0; i < snap.enemies.Count; i++)
+                {
+                    EnemyAssessment e = snap.enemies[i];
+
+                    if (e == null || e.pawn == null)
+                        continue;
+
+                    Pawn p = e.pawn;
+
+                    if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
+                        continue;
+
+                    enemyCount++;
+
+                    if (e.distanceToCaster < nearestEnemy)
+                        nearestEnemy = e.distanceToCaster;
+
+                    bool meleeLike =
+                        e.IsMelee ||
+                        e.IsAnimal ||
+                        e.role == EnemyRole.Wimp;
+
+                    if (meleeLike)
+                        meleeLikeCount++;
+
+                    if (e.IsRanged)
+                    {
+                        rangedCount++;
+
+                        if (e.distanceToCaster < nearestRanged)
+                            nearestRanged = e.distanceToCaster;
+
+                        if (e.hasLineOfSight && e.canShootNow)
+                            rangedLos++;
+
+                        if (e.estimatedDps > 0f)
+                            totalRangedDps += e.estimatedDps;
+                    }
+                }
+            }
+
+            /*
+             * Главный trigger:
+             * большой pack с несколькими стрелками.
+             *
+             * Это как раз твой тест:
+             * 6 врагов, 4 ranged, общий cluster=6.
+             */
+            bool largeRangedCluster =
+                enemyCount >= 5 &&
+                rangedCount >= 3 &&
+                snap.largestClusterSize >= 4;
+
+            /*
+             * Альтернативный trigger:
+             * меньше врагов, но они уже держат LOS и могут быстро снести shield.
+             */
+            bool dangerousOpenApproach =
+                rangedLos >= 3 ||
+                totalRangedDps >= 30f;
+
+            /*
+             * Если враги уже в упор, Invisibility может быть поздно/не то.
+             * Тогда пусть emergency/recovery/melee решают.
+             */
+            if (nearestEnemy < 10f)
+                return false;
+
+            /*
+             * Если враги очень далеко, не тратим invis заранее.
+             * Пусть сначала подойдёт до разумной зоны.
+             */
+            if (nearestEnemy > 45f && rangedLos <= 0)
+                return false;
+
+            if (!largeRangedCluster && !dangerousOpenApproach)
+                return false;
+
+            if (!HasEnoughPsyfocusForAbility("Invisibility"))
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster pre-engage Invisibility blocked by psyfocus: "
+                                + caster.LabelShort
+                                + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                + " | required=" + GetMinimumPsyfocusForAbility("Invisibility").ToString("F2")
+                                + " | enemies=" + enemyCount
+                                + " | ranged=" + rangedCount
+                                + " | rangedLos=" + rangedLos);
+                }
+
+                return false;
+            }
+
+            bool casted = TryCastSelfCombatAbility(
+                "Invisibility",
+                PsycasterTuning.InvisibilitySoftCooldownMin,
+                PsycasterTuning.InvisibilitySoftCooldownMax,
+                "pre-engage stealth");
+
+            if (!casted)
+                return false;
+
+            nextActionSelectTick = now + PsycasterTuning.CastWarmupMedium + 60;
+            nextStanceReevalTick = now + 60;
+
+            Log.Message("[Signal Interceptor] Psycaster pre-engage Invisibility: "
+                        + caster.LabelShort
+                        + " | hp=" + hp.ToString("F2")
+                        + " | enemies=" + enemyCount
+                        + " | ranged=" + rangedCount
+                        + " | rangedLos=" + rangedLos
+                        + " | meleeLike=" + meleeLikeCount
+                        + " | cluster=" + snap.largestClusterSize
+                        + " | nearestEnemy=" + nearestEnemy.ToString("F1")
+                        + " | nearestRanged=" + nearestRanged.ToString("F1")
+                        + " | rangedDps=" + totalRangedDps.ToString("F1"));
+
+            return true;
+        }
+
+        private bool TryCastSelfCombatAbility(string abilityDefName, int softCooldownMin, int softCooldownMax, string reason)
+        {
+            if (string.IsNullOrEmpty(abilityDefName))
+                return false;
+
+            if (IsOnSoftCooldown(abilityDefName))
+                return false;
+
+            if (!HasEnoughPsyfocusForAbility(abilityDefName))
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster self combat cast blocked by psyfocus: "
+                                + abilityDefName
+                                + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                + " | required=" + GetMinimumPsyfocusForAbility(abilityDefName).ToString("F2")
+                                + " | reason=" + reason);
+                }
+
+                return false;
+            }
+
+            AbilityDef def = GetAbilityDef(abilityDefName);
+
+            if (def == null)
+                return false;
+
+            object ability = GetPawnAbilityObject(def);
+
+            if (ability == null)
+                return false;
+
+            if (IsAbilityOnCooldown(ability))
+                return false;
+
+            bool casted = gc.TryCastSelfPsyAbility_Public(caster, abilityDefName);
+
+            if (!casted)
+                return false;
+
+            softCooldowns[abilityDefName] = Find.TickManager.TicksGame + Rand.RangeInclusive(softCooldownMin, softCooldownMax);
+
+            pendingMeleeTargetThingId = -1;
+            pendingMeleeUntilTick = -1;
+            pendingMeleeReason = null;
+
+            return true;
+        }
 
         private bool TryRunSingleEnemyDuelResolution(BattlefieldSnapshot snap)
         {
@@ -490,6 +718,62 @@ namespace SignalInterceptor.AI.Psycaster
             return false;
         }
 
+        private int CountMeaningfulRangedPressure(
+    BattlefieldSnapshot snap,
+    out float meaningfulIncomingDps,
+    out float nearestMeaningfulShooterDist)
+        {
+            meaningfulIncomingDps = 0f;
+            nearestMeaningfulShooterDist = 999f;
+
+            if (snap == null || snap.enemies == null || caster == null || caster.Map == null)
+                return 0;
+
+            int count = 0;
+            Map map = caster.Map;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                Pawn p = e.pawn;
+
+                if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
+                    continue;
+
+                if (!e.IsRanged)
+                    continue;
+
+                if (!e.hasLineOfSight)
+                    continue;
+
+                if (!e.canShootNow)
+                    continue;
+
+                if (e.estimatedDps <= 0.1f)
+                    continue;
+
+                /*
+                 * Главное отличие от старого rangedLos:
+                 * дальний враг вне своей практической дистанции не должен мгновенно триггерить smoke.
+                 */
+                float practicalRange = Mathf.Max(18f, e.weaponRange + 2f);
+
+                if (e.distanceToCaster > practicalRange)
+                    continue;
+
+                count++;
+                meaningfulIncomingDps += e.estimatedDps;
+
+                if (e.distanceToCaster < nearestMeaningfulShooterDist)
+                    nearestMeaningfulShooterDist = e.distanceToCaster;
+            }
+
+            return count;
+        }
 
         private bool TryStopLeavingMapJob()
         {
@@ -611,17 +895,6 @@ namespace SignalInterceptor.AI.Psycaster
             if (!IsCasterFreeToAct())
                 return false;
 
-            /*
-             * ВАЖНЕЙШИЙ ФИКС:
-             * leash не должен вмешиваться в активный kill-contract.
-             *
-             * В твоём логе было:
-             * - кастер коммитится в Hodge
-             * - потом soft leash return immediateDanger=True
-             * - потом снова pending/melee
-             *
-             * Это и создаёт дёрганье.
-             */
             if (HasActiveKillContract)
                 return false;
 
@@ -636,14 +909,55 @@ namespace SignalInterceptor.AI.Psycaster
             bool immediateDanger = HasImmediateLeashDanger(snap);
 
             /*
-             * Если есть непосредственная опасность — leash НЕ имеет права стартовать.
-             *
-             * Исключение можно было бы делать для совсем края карты,
-             * но на практике это снова создаёт stagger.
-             * Поэтому при immediateDanger полностью отдаём управление combat/recovery.
+             * Если есть непосредственная опасность — leash не имеет права стартовать.
              */
             if (immediateDanger)
                 return false;
+
+            /*
+             * КРИТИЧЕСКИЙ ФИКС:
+             * Если есть живые враги и кастер уже находится в зоне боя/подхода,
+             * soft leash не должен перетягивать его обратно к HomeAnchor.
+             *
+             * Иначе получается цикл:
+             * idle-approach -> leash return -> idle-approach -> bullets -> recovery/death.
+             */
+            if (snap != null && snap.HasEnemies)
+            {
+                float nearestEnemyDist = GetNearestStandingEnemyDistance(snap);
+                int visibleRanged = CountRangedEnemiesWithLosToCaster(snap);
+
+                bool combatRelevant =
+                    nearestEnemyDist <= 65f ||
+                    visibleRanged > 0 ||
+                    snap.totalIncomingDps > 0f ||
+                    currentStance == PsycasterStance.Opening ||
+                    currentStance == PsycasterStance.CrowdControl ||
+                    currentStance == PsycasterStance.Hunt ||
+                    currentStance == PsycasterStance.Kite;
+
+                /*
+                 * В бою leash разрешён только если он реально у края карты
+                 * или вообще ушёл экстремально далеко.
+                 *
+                 * homeDist=70 при enemies=6 — это НЕ повод возвращать его домой.
+                 */
+                if (combatRelevant && !nearEdge && homeDist < SoftHomeHardRadius + 20f)
+                {
+                    if (Prefs.DevMode)
+                    {
+                        Log.Message("[Signal Interceptor] Psycaster soft leash suppressed by combat: "
+                                    + caster.LabelShort
+                                    + " | homeDist=" + homeDist.ToString("F1")
+                                    + " | nearestEnemy=" + nearestEnemyDist.ToString("F1")
+                                    + " | visibleRanged=" + visibleRanged
+                                    + " | incomingDps=" + snap.totalIncomingDps.ToString("F1")
+                                    + " | stance=" + currentStance);
+                    }
+
+                    return false;
+                }
+            }
 
             /*
              * Если он не слишком далеко и не у края карты — leash не нужен.
@@ -681,9 +995,6 @@ namespace SignalInterceptor.AI.Psycaster
 
             caster.jobs.StartJob(job, JobCondition.InterruptForced);
 
-            /*
-             * Cooldown делаем длиннее, чтобы leash не дёргал пешку каждые пару секунд.
-             */
             nextSoftLeashReturnTick = now + Mathf.Max(SoftLeashReturnCooldownTicks, 420);
             nextActionSelectTick = now + 150;
             nextStanceReevalTick = now + 150;
@@ -697,6 +1008,68 @@ namespace SignalInterceptor.AI.Psycaster
                         + " | anchor=" + HomeAnchor);
 
             return true;
+        }
+
+        private float GetNearestStandingEnemyDistance(BattlefieldSnapshot snap)
+        {
+            if (snap == null || snap.enemies == null || caster == null || caster.Map == null)
+                return 999f;
+
+            float nearest = 999f;
+            Map map = caster.Map;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                Pawn p = e.pawn;
+
+                if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
+                    continue;
+
+                if (e.distanceToCaster < nearest)
+                    nearest = e.distanceToCaster;
+            }
+
+            return nearest;
+        }
+
+        private int CountRangedEnemiesWithLosToCaster(BattlefieldSnapshot snap)
+        {
+            if (snap == null || snap.enemies == null || caster == null || caster.Map == null)
+                return 0;
+
+            int count = 0;
+            Map map = caster.Map;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                Pawn p = e.pawn;
+
+                if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
+                    continue;
+
+                if (!e.IsRanged)
+                    continue;
+
+                if (!e.hasLineOfSight)
+                    continue;
+
+                if (!e.canShootNow)
+                    continue;
+
+                count++;
+            }
+
+            return count;
         }
 
         private bool TryFindSoftLeashReturnCell(BattlefieldSnapshot snap, out IntVec3 result)
@@ -1328,47 +1701,59 @@ namespace SignalInterceptor.AI.Psycaster
                 ? caster.health.summaryHealth.SummaryHealthPercent
                 : 1f;
 
-            int rangedLos = snap.enemiesWithLosToCaster != null
-                ? snap.enemiesWithLosToCaster.Count(e => e != null && e.IsRanged && e.canShootNow)
-                : 0;
+            float meaningfulIncomingDps;
+            float nearestShooterDist;
+
+            int rangedPressure = CountMeaningfulRangedPressure(
+                snap,
+                out meaningfulIncomingDps,
+                out nearestShooterDist);
 
             int enemyCount = snap.enemies != null ? snap.enemies.Count : 0;
 
             bool singleEnemy = enemyCount <= 1;
 
+            bool invisible = IsCasterInvisibleNow();
+
             bool underRangedPressure =
-                rangedLos >= 1 ||
-                snap.totalIncomingDps >= 10f;
+                rangedPressure >= 1 ||
+                meaningfulIncomingDps >= 10f;
 
             bool severeRangedPressure =
-                rangedLos >= 2 ||
-                snap.totalIncomingDps >= 35f;
+                rangedPressure >= 2 ||
+                meaningfulIncomingDps >= 35f;
 
             bool panicRangedPressure =
-                rangedLos >= 3 ||
-                snap.totalIncomingDps >= 55f;
+                rangedPressure >= 3 ||
+                meaningfulIncomingDps >= 55f;
 
             bool critical = hp <= 0.45f;
             bool dangerous = hp <= 0.65f;
             bool damaged = hp <= 0.78f;
 
             /*
-             * Если ranged pressure нет — не тратим defensive psycast.
+             * Нет реального ranged pressure — не тратим defensive psycast.
+             * Важно для шаттла: сам факт появления shuttle / дальнего стрелка
+             * больше не должен сразу прожимать Smokepop.
              */
             if (!underRangedPressure)
                 return false;
 
             /*
-             * Фикс:
-             * один стрелок не должен заставлять кастера на 0.90-1.00 HP
-             * спамить Invisibility/Smokepop.
+             * Если уже invisible, второй defensive layer обычно не нужен.
+             * Разрешаем дальнейшую защиту только при настоящей панике.
+             */
+            if (invisible && !panicRangedPressure && !critical)
+                return false;
+
+            /*
+             * Один стрелок против почти полного HP не должен вызывать smoke/invis.
              */
             if (singleEnemy && hp >= 0.80f && !panicRangedPressure)
                 return false;
 
             /*
-             * Ещё один фикс:
-             * при высоком HP defensive psycast разрешён только при настоящем сильном огне.
+             * На высоком HP defensive psycast разрешён только при реально тяжёлом огне.
              */
             if (hp >= 0.90f && !panicRangedPressure)
                 return false;
@@ -1376,17 +1761,18 @@ namespace SignalInterceptor.AI.Psycaster
             /*
              * 1) Invisibility — panic button.
              */
-            if ((critical || dangerous || severeRangedPressure) && !IsCasterInvisibleNow())
+            if ((critical || dangerous || severeRangedPressure) && !invisible)
             {
                 if (TryCastRecoverySelfAbility("Invisibility", PsycasterTuning.InvisibilitySoftCooldownMin, PsycasterTuning.InvisibilitySoftCooldownMax))
                 {
-                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(110, 160);
-                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 90;
+                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(130, 190);
+                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 120;
 
                     Log.Message("[Signal Interceptor] Psycaster recovery defensive Invisibility"
                                 + " | HP=" + hp.ToString("F2")
-                                + " | rangedLOS=" + rangedLos
-                                + " | incomingDps=" + snap.totalIncomingDps.ToString("F1")
+                                + " | rangedPressure=" + rangedPressure
+                                + " | meaningfulDps=" + meaningfulIncomingDps.ToString("F1")
+                                + " | nearestShooter=" + nearestShooterDist.ToString("F1")
                                 + " | enemies=" + enemyCount);
 
                     return true;
@@ -1395,19 +1781,28 @@ namespace SignalInterceptor.AI.Psycaster
 
             /*
              * 2) Smokepop.
-             * Если уже невидим — smoke почти всегда лишний.
+             *
+             * Не кастуем smoke поверх invisibility, кроме критического panic.
+             * Не кастуем smoke от одного далёкого формального LOS.
              */
-            if (!IsCasterInvisibleNow() && (critical || dangerous || damaged || panicRangedPressure) && rangedLos >= 1)
+            bool allowSmokeWhileInvisible =
+                invisible && critical && panicRangedPressure;
+
+            if ((!invisible || allowSmokeWhileInvisible) &&
+                (critical || dangerous || damaged || panicRangedPressure) &&
+                rangedPressure >= 1)
             {
                 if (TryCastRecoverySelfAbility("Smokepop", PsycasterTuning.SmokepopSoftCooldownMin, PsycasterTuning.SmokepopSoftCooldownMax))
                 {
-                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(110, 160);
-                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 90;
+                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(130, 190);
+                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 120;
 
                     Log.Message("[Signal Interceptor] Psycaster recovery defensive Smokepop"
                                 + " | HP=" + hp.ToString("F2")
-                                + " | rangedLOS=" + rangedLos
-                                + " | incomingDps=" + snap.totalIncomingDps.ToString("F1")
+                                + " | rangedPressure=" + rangedPressure
+                                + " | meaningfulDps=" + meaningfulIncomingDps.ToString("F1")
+                                + " | nearestShooter=" + nearestShooterDist.ToString("F1")
+                                + " | invisible=" + invisible
                                 + " | enemies=" + enemyCount);
 
                     return true;
