@@ -231,11 +231,18 @@ namespace SignalInterceptor.AI.Psycaster
                 return;
             }
 
-            /*
-             * Emergency escape имеет приоритет над pending-melee.
-             * Если он реально почти умер — пусть оторвётся, а не самоубивается в дуэли.
-             */
+            // Emergency escape имеет приоритет над pending-melee.
+            // Если он реально почти умер — пусть оторвётся, а не самоубивается в дуэли.
             if (IsCasterFreeToAct() && TryEmergencyRetreat(snap))
+                return;
+
+            /*
+             * Новый фикс:
+             * если остался один враг, особенно один дальник,
+             * не даём AI бесконечно "preserving ranged tools" на дистанции 10-15.
+             * В стабильном состоянии он должен закончить дуэль.
+             */
+            if (IsCasterFreeToAct() && TryRunSingleEnemyDuelResolution(snap))
                 return;
 
             if (TryRunPendingMelee(snap))
@@ -308,6 +315,180 @@ namespace SignalInterceptor.AI.Psycaster
         // ============================================================
         // Выбор действия (action-select)
         // ============================================================
+
+        private bool TryRunSingleEnemyDuelResolution(BattlefieldSnapshot snap)
+        {
+            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null || snap.enemies == null)
+                return false;
+
+            if (!IsCasterFreeToAct())
+                return false;
+
+            Map map = caster.Map;
+
+            EnemyAssessment only = null;
+            int standingEnemies = 0;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                if (e.pawn.Destroyed || e.pawn.Dead || e.pawn.Downed || !e.pawn.Spawned || e.pawn.Map != map)
+                    continue;
+
+                standingEnemies++;
+                only = e;
+            }
+
+            if (standingEnemies != 1 || only == null || only.pawn == null)
+                return false;
+
+            Pawn target = only.pawn;
+
+            float hp = caster.health != null && caster.health.summaryHealth != null
+                ? caster.health.summaryHealth.SummaryHealthPercent
+                : 1f;
+
+            float d = caster.Position.DistanceTo(target.Position);
+
+            bool bleeding = HasDangerousBleeding();
+
+            /*
+             * Если он реально ранен/кровоточит — не ломаем recovery.
+             */
+            if (hp <= 0.70f)
+                return false;
+
+            if (bleeding && hp <= 0.86f)
+                return false;
+
+            /*
+             * Если текущая работа уже melee по этому же врагу — не перезапускаем её.
+             */
+            Job curJob = caster.CurJob;
+
+            if (curJob != null &&
+                curJob.def == JobDefOf.AttackMelee &&
+                curJob.targetA.HasThing &&
+                curJob.targetA.Thing == target)
+            {
+                return true;
+            }
+
+            /*
+             * Главный случай из лога:
+             * один снайпер, дистанция 10-15, кастер ходит туда-сюда.
+             *
+             * В этой ситуации он должен не "сохранять ranged tools",
+             * а коммититься в добивание.
+             */
+            bool rangedDuel =
+                only.IsRanged ||
+                only.role == EnemyRole.Sniper ||
+                only.role == EnemyRole.Heavy;
+
+            bool meleeDuel =
+                only.IsMelee ||
+                only.IsAnimal ||
+                only.role == EnemyRole.Wimp;
+
+            if (!rangedDuel && !meleeDuel)
+                return false;
+
+            /*
+             * Если враг далеко, пусть обычная логика подводит его на дистанцию.
+             * Но если уже в пределах 30 клеток — melee job нормально догонит цель.
+             */
+            if (d > 30f)
+                return false;
+
+            if (!caster.CanReach(target, PathEndMode.Touch, Danger.Deadly))
+                return false;
+
+            /*
+             * Для одного melee-врага:
+             * если кастер здоров, не надо бесконечно убегать.
+             * Пусть принимает дуэль.
+             */
+            if (meleeDuel && hp >= 0.82f && !bleeding)
+            {
+                Job meleeJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+                meleeJob.locomotionUrgency = LocomotionUrgency.Sprint;
+                meleeJob.expiryInterval = 240;
+                meleeJob.checkOverrideOnExpire = true;
+                meleeJob.maxNumMeleeAttacks = 1;
+
+                caster.jobs.StartJob(
+                    meleeJob,
+                    JobCondition.InterruptForced,
+                    null,
+                    resumeCurJobAfterwards: false,
+                    cancelBusyStances: true
+                );
+
+                StartKillContract(target, 480, "SingleMeleeDuel");
+
+                nextActionSelectTick = Find.TickManager.TicksGame + 90;
+                nextStanceReevalTick = Find.TickManager.TicksGame + 90;
+
+                Log.Message("[Signal Interceptor] Psycaster single-melee duel commit: "
+                            + target.LabelShort
+                            + " | d=" + d.ToString("F1")
+                            + " | hp=" + hp.ToString("F2")
+                            + " | bleeding=" + bleeding);
+
+                return true;
+            }
+
+            /*
+             * Для одного дальника:
+             * если кастер уже достаточно близко, не ходим туда-сюда.
+             * Дожимаем.
+             */
+            if (rangedDuel && hp >= 0.74f)
+            {
+                Job meleeJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+                meleeJob.locomotionUrgency = LocomotionUrgency.Sprint;
+                meleeJob.expiryInterval = 300;
+                meleeJob.checkOverrideOnExpire = true;
+                meleeJob.maxNumMeleeAttacks = 1;
+
+                caster.jobs.StartJob(
+                    meleeJob,
+                    JobCondition.InterruptForced,
+                    null,
+                    resumeCurJobAfterwards: false,
+                    cancelBusyStances: true
+                );
+
+                StartKillContract(target, 600, "SingleRangedDuel");
+
+                pendingMeleeTargetThingId = target.thingIDNumber;
+                pendingMeleeUntilTick = Find.TickManager.TicksGame + 360;
+                pendingMeleeReason = "SingleRangedDuel";
+
+                nextActionSelectTick = Find.TickManager.TicksGame + 90;
+                nextStanceReevalTick = Find.TickManager.TicksGame + 90;
+
+                Log.Message("[Signal Interceptor] Psycaster single-ranged duel commit: "
+                            + target.LabelShort
+                            + " | d=" + d.ToString("F1")
+                            + " | role=" + only.role
+                            + " | hp=" + hp.ToString("F2")
+                            + " | bleeding=" + bleeding);
+
+                return true;
+            }
+
+            return false;
+        }
+
 
         private bool TryStopLeavingMapJob()
         {
@@ -429,32 +610,49 @@ namespace SignalInterceptor.AI.Psycaster
             if (!IsCasterFreeToAct())
                 return false;
 
+            /*
+             * ВАЖНЕЙШИЙ ФИКС:
+             * leash не должен вмешиваться в активный kill-contract.
+             *
+             * В твоём логе было:
+             * - кастер коммитится в Hodge
+             * - потом soft leash return immediateDanger=True
+             * - потом снова pending/melee
+             *
+             * Это и создаёт дёрганье.
+             */
+            if (HasActiveKillContract)
+                return false;
+
+            if (pendingMeleeTargetThingId >= 0 && pendingMeleeUntilTick > now)
+                return false;
+
             Map map = caster.Map;
 
             float homeDist = caster.Position.DistanceTo(HomeAnchor);
 
-            /*
-             * Если он не слишком далеко и не у края карты — leash не нужен.
-             */
-            if (homeDist < SoftHomeSoftRadius && !IsNearMapEdge(caster.Position, map, MapEdgeDangerDistance + 4))
-                return false;
-
-            /*
-             * Не возвращаем насильно, если есть непосредственная угроза.
-             * Иначе он будет умирать из-за leash-а.
-             *
-             * Исключение: если он уже у края карты — можно мягко увести внутрь,
-             * но всё равно не в одну фиксированную точку.
-             */
             bool nearEdge = IsNearMapEdge(caster.Position, map, MapEdgeDangerDistance + 4);
             bool immediateDanger = HasImmediateLeashDanger(snap);
 
-            if (immediateDanger && !nearEdge && homeDist < SoftHomeHardRadius)
+            /*
+             * Если есть непосредственная опасность — leash НЕ имеет права стартовать.
+             *
+             * Исключение можно было бы делать для совсем края карты,
+             * но на практике это снова создаёт stagger.
+             * Поэтому при immediateDanger полностью отдаём управление combat/recovery.
+             */
+            if (immediateDanger)
+                return false;
+
+            /*
+             * Если он не слишком далеко и не у края карты — leash не нужен.
+             */
+            if (homeDist < SoftHomeSoftRadius && !nearEdge)
                 return false;
 
             /*
              * Если текущий Goto уже ведёт в нормальную внутреннюю клетку,
-             * не прерываем его, чтобы не создавать stagger.
+             * не прерываем его.
              */
             Job curJob = caster.CurJob;
 
@@ -482,9 +680,12 @@ namespace SignalInterceptor.AI.Psycaster
 
             caster.jobs.StartJob(job, JobCondition.InterruptForced);
 
-            nextSoftLeashReturnTick = now + SoftLeashReturnCooldownTicks;
-            nextActionSelectTick = now + 120;
-            nextStanceReevalTick = now + 120;
+            /*
+             * Cooldown делаем длиннее, чтобы leash не дёргал пешку каждые пару секунд.
+             */
+            nextSoftLeashReturnTick = now + Mathf.Max(SoftLeashReturnCooldownTicks, 420);
+            nextActionSelectTick = now + 150;
+            nextStanceReevalTick = now + 150;
 
             Log.Message("[Signal Interceptor] Psycaster soft leash return: "
                         + caster.LabelShort
@@ -879,6 +1080,19 @@ namespace SignalInterceptor.AI.Psycaster
             if (IsOnSoftCooldown("Waterskip"))
                 return false;
 
+            if (!HasEnoughPsyfocusForAbility("Waterskip"))
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster Waterskip self-extinguish blocked by psyfocus: "
+                                + caster.LabelShort
+                                + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                + " | required=" + GetMinimumPsyfocusForAbility("Waterskip").ToString("F2"));
+                }
+
+                return false;
+            }
+
             AbilityDef waterskipDef = GetAbilityDef("Waterskip");
 
             if (waterskipDef == null)
@@ -915,7 +1129,8 @@ namespace SignalInterceptor.AI.Psycaster
 
             Log.Message("[Signal Interceptor] Psycaster emergency Waterskip self-extinguish: "
                         + caster.LabelShort
-                        + " | pos=" + caster.Position);
+                        + " | pos=" + caster.Position
+                        + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2"));
 
             return true;
         }
@@ -1118,36 +1333,54 @@ namespace SignalInterceptor.AI.Psycaster
 
             int enemyCount = snap.enemies != null ? snap.enemies.Count : 0;
 
+            bool singleEnemy = enemyCount <= 1;
+
             bool underRangedPressure =
                 rangedLos >= 1 ||
                 snap.totalIncomingDps >= 10f;
 
             bool severeRangedPressure =
                 rangedLos >= 2 ||
-                snap.totalIncomingDps >= 20f;
+                snap.totalIncomingDps >= 35f;
+
+            bool panicRangedPressure =
+                rangedLos >= 3 ||
+                snap.totalIncomingDps >= 55f;
 
             bool critical = hp <= 0.45f;
             bool dangerous = hp <= 0.65f;
-            bool damaged = hp <= 0.85f;
+            bool damaged = hp <= 0.78f;
 
             /*
-             * Важный фикс:
-             * если ranged pressure нет, не спамим defensive Invisibility/Smokepop.
-             * Против одного melee recovery должен решаться движением/Skip,
-             * иначе получается бесконечный цикл невидимости.
+             * Если ranged pressure нет — не тратим defensive psycast.
              */
             if (!underRangedPressure)
                 return false;
 
             /*
-             * 1) Invisibility — лучший panic button против стрелков.
+             * Фикс:
+             * один стрелок не должен заставлять кастера на 0.90-1.00 HP
+             * спамить Invisibility/Smokepop.
+             */
+            if (singleEnemy && hp >= 0.80f && !panicRangedPressure)
+                return false;
+
+            /*
+             * Ещё один фикс:
+             * при высоком HP defensive psycast разрешён только при настоящем сильном огне.
+             */
+            if (hp >= 0.90f && !panicRangedPressure)
+                return false;
+
+            /*
+             * 1) Invisibility — panic button.
              */
             if ((critical || dangerous || severeRangedPressure) && !IsCasterInvisibleNow())
             {
                 if (TryCastRecoverySelfAbility("Invisibility", PsycasterTuning.InvisibilitySoftCooldownMin, PsycasterTuning.InvisibilitySoftCooldownMax))
                 {
-                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(90, 130);
-                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 60;
+                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(110, 160);
+                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 90;
 
                     Log.Message("[Signal Interceptor] Psycaster recovery defensive Invisibility"
                                 + " | HP=" + hp.ToString("F2")
@@ -1160,14 +1393,15 @@ namespace SignalInterceptor.AI.Psycaster
             }
 
             /*
-             * 2) Smokepop — если Invisibility недоступна или ситуация менее критичная.
+             * 2) Smokepop.
+             * Если уже невидим — smoke почти всегда лишний.
              */
-            if ((dangerous || damaged || severeRangedPressure) && rangedLos >= 1)
+            if (!IsCasterInvisibleNow() && (critical || dangerous || damaged || panicRangedPressure) && rangedLos >= 1)
             {
                 if (TryCastRecoverySelfAbility("Smokepop", PsycasterTuning.SmokepopSoftCooldownMin, PsycasterTuning.SmokepopSoftCooldownMax))
                 {
-                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(90, 130);
-                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 60;
+                    nextRecoveryThinkTick = Find.TickManager.TicksGame + Rand.RangeInclusive(110, 160);
+                    nextActionSelectTick = Find.TickManager.TicksGame + PsycasterTuning.CastWarmupMedium + 90;
 
                     Log.Message("[Signal Interceptor] Psycaster recovery defensive Smokepop"
                                 + " | HP=" + hp.ToString("F2")
@@ -1189,6 +1423,19 @@ namespace SignalInterceptor.AI.Psycaster
 
             if (IsOnSoftCooldown(abilityDefName))
                 return false;
+
+            if (!HasEnoughPsyfocusForAbility(abilityDefName))
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster recovery cast blocked by psyfocus: "
+                                + abilityDefName
+                                + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                + " | required=" + GetMinimumPsyfocusForAbility(abilityDefName).ToString("F2"));
+                }
+
+                return false;
+            }
 
             AbilityDef def = GetAbilityDef(abilityDefName);
 
@@ -1315,6 +1562,19 @@ namespace SignalInterceptor.AI.Psycaster
 
             if (skipDef == null)
                 return false;
+
+            if (!HasEnoughPsyfocusForAbility("Skip"))
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Message("[Signal Interceptor] Psycaster recovery-kite Skip blocked by psyfocus: "
+                                + caster.LabelShort
+                                + " | psyfocus=" + GetCurrentPsyfocusFraction().ToString("F2")
+                                + " | required=" + GetMinimumPsyfocusForAbility("Skip").ToString("F2"));
+                }
+
+                return false;
+            }
 
             object ability = GetPawnAbilityObject(skipDef);
 
@@ -1528,6 +1788,82 @@ namespace SignalInterceptor.AI.Psycaster
 
             result = best;
             return true;
+        }
+
+        private float GetCurrentPsyfocusFraction()
+        {
+            if (caster == null || caster.psychicEntropy == null)
+                return 0f;
+
+            return caster.psychicEntropy.CurrentPsyfocus;
+        }
+
+        private bool HasEnoughPsyfocusForAbility(string abilityDefName)
+        {
+            float current = GetCurrentPsyfocusFraction();
+            float required = GetMinimumPsyfocusForAbility(abilityDefName);
+
+            return current >= required;
+        }
+
+        private float GetMinimumPsyfocusForAbility(string abilityDefName)
+        {
+            if (string.IsNullOrEmpty(abilityDefName))
+                return 0.10f;
+
+            switch (abilityDefName)
+            {
+                case "Focus":
+                    return 0.05f;
+
+                case "Smokepop":
+                    return 0.10f;
+
+                case "Waterskip":
+                    return 0.10f;
+
+                case "Stun":
+                    return 0.12f;
+
+                case "BlindingPulse":
+                    return 0.18f;
+
+                case "VertigoPulse":
+                    return 0.18f;
+
+                case "Invisibility":
+                    return 0.20f;
+
+                case "Skip":
+                    return 0.20f;
+
+                case "ChaosSkip":
+                    return 0.20f;
+
+                case "Beckon":
+                    return 0.20f;
+
+                case "Wallraise":
+                    return 0.20f;
+
+                case "Berserk":
+                    return 0.24f;
+
+                case "BerserkPulse":
+                    return 0.28f;
+
+                case "MassChaosSkip":
+                    return 0.28f;
+
+                case "ManhunterPulse":
+                    return 0.30f;
+
+                case "Skipshield":
+                    return 0.20f;
+
+                default:
+                    return 0.15f;
+            }
         }
 
         private bool IsRecoveryPositionStillSafe(BattlefieldSnapshot snap)
