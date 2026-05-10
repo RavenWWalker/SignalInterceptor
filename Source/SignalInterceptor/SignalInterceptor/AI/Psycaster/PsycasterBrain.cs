@@ -1040,162 +1040,42 @@ namespace SignalInterceptor.AI.Psycaster
 
         private bool ShouldHoldRecoveryPosition(BattlefieldSnapshot snap)
         {
-            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+            if (caster == null || caster.health == null)
                 return false;
 
-            if (caster.Map == null)
+            if (HasDangerousBleeding())
                 return false;
 
-            /*
-             * Если реген ещё не активен — стоять нельзя, надо отрываться.
-             */
-            if (!CanRegenerateNow())
+            if (HasRecoveryThreatPressure(snap))
                 return false;
 
-            float hp = caster.health != null && caster.health.summaryHealth != null
-                ? caster.health.summaryHealth.SummaryHealthPercent
-                : 1f;
+            float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
-            float nearestMeleeOrAnimal = 999f;
-            float nearestAny = 999f;
-            int rangedLos = 0;
+            HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
 
-            Map map = caster.Map;
-
-            if (snap.enemies != null)
-            {
-                for (int i = 0; i < snap.enemies.Count; i++)
-                {
-                    EnemyAssessment e = snap.enemies[i];
-
-                    if (e == null || e.pawn == null)
-                        continue;
-
-                    Pawn p = e.pawn;
-
-                    if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
-                        continue;
-
-                    if (e.distanceToCaster < nearestAny)
-                        nearestAny = e.distanceToCaster;
-
-                    bool meleeLike =
-                        e.IsMelee ||
-                        e.IsAnimal ||
-                        e.role == EnemyRole.Wimp;
-
-                    if (meleeLike && e.distanceToCaster < nearestMeleeOrAnimal)
-                        nearestMeleeOrAnimal = e.distanceToCaster;
-
-                    if (e.IsRanged && e.hasLineOfSight && e.canShootNow)
-                        rangedLos++;
-                }
-            }
-
-            /*
-             * Если милишник/животное рядом — держаться нельзя.
-             */
-            if (nearestMeleeOrAnimal <= 12f)
+            if (restore == null)
                 return false;
 
             /*
-             * Если по нему сейчас реально могут стрелять — лучше двигаться/защищаться.
+             * Если реген ещё заблокирован недавним уроном,
+             * можно немного подождать, но только если HP не критический.
              */
-            if (rangedLos >= 1 && hp < 0.82f)
-                return false;
+            if (!restore.CanRegenerateNow)
+                return hp >= 0.70f && restore.TicksSinceDamage >= 0;
 
             /*
-             * Если позиция сама по себе небезопасна — не холдим.
+             * Если HP уже достаточно высокий — лучше выйти из recovery
+             * через IsRecoveredEnough, а не держать hold.
              */
-            if (!IsRecoveryPositionStillSafe(caster.Position, snap))
+            if (hp >= 0.82f)
                 return false;
 
             /*
              * Основной случай:
-             * он уже оторвался, механизмы работают, HP растёт.
-             * Не надо бегать дальше.
+             * ранен, но нет кровотечения, нет давления, реген работает.
+             * Значит не надо стартовать новый retreat/Goto.
              */
-            return true;
-        }
-
-        private bool ShouldHoldRecoveryPosition(BattlefieldSnapshot snap)
-        {
-            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
-                return false;
-
-            if (caster.Map == null)
-                return false;
-
-            /*
-             * Если реген ещё не активен — стоять нельзя, надо отрываться.
-             */
-            if (!CanRegenerateNow())
-                return false;
-
-            float hp = caster.health != null && caster.health.summaryHealth != null
-                ? caster.health.summaryHealth.SummaryHealthPercent
-                : 1f;
-
-            float nearestMeleeOrAnimal = 999f;
-            float nearestAny = 999f;
-            int rangedLos = 0;
-
-            Map map = caster.Map;
-
-            if (snap.enemies != null)
-            {
-                for (int i = 0; i < snap.enemies.Count; i++)
-                {
-                    EnemyAssessment e = snap.enemies[i];
-
-                    if (e == null || e.pawn == null)
-                        continue;
-
-                    Pawn p = e.pawn;
-
-                    if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
-                        continue;
-
-                    if (e.distanceToCaster < nearestAny)
-                        nearestAny = e.distanceToCaster;
-
-                    bool meleeLike =
-                        e.IsMelee ||
-                        e.IsAnimal ||
-                        e.role == EnemyRole.Wimp;
-
-                    if (meleeLike && e.distanceToCaster < nearestMeleeOrAnimal)
-                        nearestMeleeOrAnimal = e.distanceToCaster;
-
-                    if (e.IsRanged && e.hasLineOfSight && e.canShootNow)
-                        rangedLos++;
-                }
-            }
-
-            /*
-             * Если милишник/животное рядом — держаться нельзя.
-             */
-            if (nearestMeleeOrAnimal <= 12f)
-                return false;
-
-            /*
-             * Если по нему сейчас реально могут стрелять — лучше двигаться/защищаться.
-             */
-            if (rangedLos >= 1 && hp < 0.82f)
-                return false;
-
-            /*
-             * Если позиция сама по себе небезопасна — не холдим.
-             */
-            if (!IsRecoveryPositionStillSafe(caster.Position, snap))
-                return false;
-
-            /*
-             * Основной случай:
-             * он уже оторвался, механизмы работают, HP растёт.
-             * Не надо бегать дальше.
-             */
-            return true;
+            return hp >= 0.45f;
         }
 
 
@@ -1797,45 +1677,6 @@ namespace SignalInterceptor.AI.Psycaster
             RunRecoveryMovement(snap);
 
             return true;
-        }
-
-        private bool ShouldHoldRecoveryPosition(BattlefieldSnapshot snap)
-        {
-            if (caster == null || caster.health == null)
-                return false;
-
-            if (HasDangerousBleeding())
-                return false;
-
-            if (HasRecoveryThreatPressure(snap))
-                return false;
-
-            float hp = caster.health.summaryHealth.SummaryHealthPercent;
-
-            HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
-
-            if (restore == null)
-                return false;
-
-            /*
-             * Если реген ещё заблокирован недавним уроном,
-             * можно немного подождать, но только если HP не критический.
-             */
-            if (!restore.CanRegenerateNow)
-                return hp >= 0.70f && restore.TicksSinceDamage >= 0;
-
-            /*
-             * Если HP уже безопасный — лучше выйти из recovery через IsRecoveredEnough.
-             */
-            if (hp >= 0.82f)
-                return false;
-
-            /*
-             * Основной случай:
-             * он ранен, но не под давлением, кровотечения нет,
-             * реген работает — не надо бегать и сбивать поведение.
-             */
-            return hp >= 0.45f;
         }
 
         private void RunRecoveryMovement(BattlefieldSnapshot snap)
