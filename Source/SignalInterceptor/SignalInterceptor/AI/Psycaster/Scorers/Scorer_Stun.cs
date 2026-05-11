@@ -8,8 +8,6 @@ namespace SignalInterceptor.AI.Psycaster
     /// или дать пси-кастеру время отбежать от ближника.
     ///
     /// Лучшая цель — самый опасный враг с LOS, ещё не оглушённый и не под mind control.
-    /// Не работает на mechanoid (формально работает, но у них своя логика стана —
-    /// и все равно бесполезно сжигать на них фокус).
     /// </summary>
     public class Scorer_Stun : AbilityScorerBase
     {
@@ -39,86 +37,63 @@ namespace SignalInterceptor.AI.Psycaster
             float bestScore = 0f;
 
             bool singleEnemy = snap.enemies.Count == 1;
+            bool isMeleeCaster = snap.caster.equipment?.Primary != null && snap.caster.equipment.Primary.def.IsMeleeWeapon;
 
             for (int i = 0; i < snap.enemies.Count; i++)
             {
                 EnemyAssessment e = snap.enemies[i];
 
-                if (e == null || e.pawn == null)
-                    continue;
+                if (e == null || e.pawn == null) continue;
+                if (!e.hasLineOfSight) continue;
+                if (e.distanceToCaster > 18f) continue;
+                if (e.isStunned) continue;
+                if (e.IsMechanoid) continue;
+                if (e.IsAnimal && e.distanceToCaster > 4f) continue;
 
-                if (!e.hasLineOfSight)
-                    continue;
-
-                if (e.distanceToCaster > 18f)
-                    continue;
-
-                if (e.isStunned)
-                    continue;
-
-                if (e.IsMechanoid)
-                    continue;
-                
-                if (e.IsAnimal && e.distanceToCaster > 4f)
-                    continue;
-                /*
-                 * Wimp обычно не приоритетная цель для Stun.
-                 * Но если это единственный враг или он уже близко — Stun нужен,
-                 * чтобы закрепить melee-дуэль и добить цель.
-                 */
                 if (e.role == EnemyRole.Wimp && !singleEnemy && e.distanceToCaster > 3.5f)
                     continue;
 
-                // ГЛАВНЫЙ ФИКС:
-                // Stun запрещён во время погони / kill-contract, если цель не близко.
-                // Особенно важно против jump pack: не даём циклу
-                // escape -> Stun at 13 -> chase -> stun expired.
                 if (brain.ShouldSuppressDistantStun(e.pawn, e.distanceToCaster, singleEnemy))
                     continue;
 
                 float score = e.threatScore / 12f;
 
-                if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
-                    score *= 1.35f;
-
-                if (e.hpFraction < 0.4f)
-                    score *= 1.15f;
-
-                // Близкий Stun — это pin под удар.
-                if (e.distanceToCaster <= 1.6f)
+                // --- НОВАЯ ЛОГИКА: ГЛАДИАТОРСКАЯ ДУЭЛЬ ---
+                if (singleEnemy && isMeleeCaster)
                 {
-                    score = 20f + (e.threatScore / 8f);
-
-                    if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
-                        score += 5f;
-
-                    if (e.hpFraction < 0.5f)
-                        score += 3f;
-
+                    // В дуэли милишнику Стан нужен как воздух, чтобы безопасно бить
+                    score = 30f + (e.threatScore / 5f);
                     if (brain.IsKillContractTarget(e.pawn))
                         score *= 1.25f;
                 }
-                else if (e.distanceToCaster <= 3.5f)
+                // --- СТАРАЯ ЛОГИКА ДЛЯ ОСТАЛЬНЫХ СЛУЧАЕВ ---
+                else
                 {
-                    score = 14f + (e.threatScore / 10f);
-
                     if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy)
-                        score += 4f;
+                        score *= 1.35f;
 
-                    if (e.hpFraction < 0.5f)
-                        score += 2f;
-
-                    if (brain.IsKillContractTarget(e.pawn))
+                    if (e.hpFraction < 0.4f)
                         score *= 1.15f;
-                }
-                else if (singleEnemy && e.IsRanged && e.distanceToCaster <= 7f)
-                {
-                    // Только короткий emergency pin.
-                    // Не должен перебивать Skip/Beckon/преследование.
-                    score = 3.5f + (e.threatScore / 40f);
 
-                    if (brain.IsKillContractTarget(e.pawn))
-                        score *= 0.5f;
+                    if (e.distanceToCaster <= 1.6f)
+                    {
+                        score = 20f + (e.threatScore / 8f);
+                        if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy) score += 5f;
+                        if (e.hpFraction < 0.5f) score += 3f;
+                        if (brain.IsKillContractTarget(e.pawn)) score *= 1.25f;
+                    }
+                    else if (e.distanceToCaster <= 3.5f)
+                    {
+                        score = 14f + (e.threatScore / 10f);
+                        if (e.role == EnemyRole.Sniper || e.role == EnemyRole.Heavy) score += 4f;
+                        if (e.hpFraction < 0.5f) score += 2f;
+                        if (brain.IsKillContractTarget(e.pawn)) score *= 1.15f;
+                    }
+                    else if (singleEnemy && e.IsRanged && e.distanceToCaster <= 7f)
+                    {
+                        score = 3.5f + (e.threatScore / 40f);
+                        if (brain.IsKillContractTarget(e.pawn)) score *= 0.5f;
+                    }
                 }
 
                 if (brain.CurrentStance == PsycasterStance.Survive)
@@ -137,15 +112,14 @@ namespace SignalInterceptor.AI.Psycaster
             ScoredAction action = new ScoredAction();
             action.abilityDefName = AbilityDefName;
             action.targetPawn = best.pawn;
+            // ИСПОЛЬЗУЮ ТВОЙ ENUM:
             action.targetType = ScoredActionTargetType.Pawn;
             action.castWarmupTicks = PsycasterTuning.CastWarmupShort;
             action.score = bestScore;
             action.debugReason = "Stun on " + best.pawn.LabelShort
-                                 + " (role=" + best.role
+                                 + " (duel=" + (singleEnemy && isMeleeCaster)
                                  + ", threat=" + best.threatScore.ToString("F1")
-                                 + ", d=" + best.distanceToCaster.ToString("F1")
-                                 + ", contract=" + brain.IsKillContractTarget(best.pawn)
-                                 + ")";
+                                 + ", d=" + best.distanceToCaster.ToString("F1") + ")";
 
             return action;
         }
