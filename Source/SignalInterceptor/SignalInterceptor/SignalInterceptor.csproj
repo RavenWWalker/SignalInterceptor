@@ -118,6 +118,7 @@
     <Compile Include="Quests\Stash\QuestPart_FactionGoodwillOnTimeout.cs" />
     <Compile Include="Quests\VIP\Doppelganger\IncidentWorker_DoppelgangerFight.cs" />
     <Compile Include="Quests\VIP\Doppelganger\ThoughtWorker_TheOriginal.cs" />
+    <Compile Include="Quests\VIP\Psycaster\GenStep_PsycasterArena.cs" />
     <Compile Include="Quests\VIP\QuestNode_Root_InterceptedVIP.cs" />
     <Compile Include="Quests\VIP\Shuttle\GenStep_ShuttleVIP.cs" />
     <Compile Include="Work\JobDriver_ScanSignals.cs" />

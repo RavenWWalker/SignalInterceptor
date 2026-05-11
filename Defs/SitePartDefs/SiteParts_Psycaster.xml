@@ -13,5 +13,17 @@
 
     <wantsThreatPoints>false</wantsThreatPoints>
     <defaultHidden>false</defaultHidden>
+    <WorkerClass>SitePartWorker_ConditionSpawner</WorkerClass> <!-- Если используешь ванильный спавнер -->
+    
+    <genStepDefs>
+      <li>SI_PsycasterArenaGenStep</li> <!-- Ссылка на GenStepDef, который мы сейчас создадим -->
+    </genStepDefs>
   </SitePartDef>
+
+  <GenStepDef>
+    <defName>SI_PsycasterArenaGenStep</defName>
+    <linkWithSite>SI_PsycasterVIPSite</linkWithSite>
+    <order>450</order> <!-- Порядок генерации (после базовой земли, но до спавна пешек) -->
+    <genStep Class="SignalInterceptor.GenStep_PsycasterArena" />
+  </GenStepDef>
 </Defs>
