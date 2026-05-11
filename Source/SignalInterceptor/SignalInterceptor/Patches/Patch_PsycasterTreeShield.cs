@@ -3,6 +3,7 @@ using RimWorld;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Verse;
 
 namespace SignalInterceptor
@@ -20,9 +21,36 @@ namespace SignalInterceptor
         }
     }
 
-    [HarmonyPatch(typeof(CompAbilityEffect), nameof(CompAbilityEffect.Apply))]
+    [HarmonyPatch]
     public static class Patch_PsycasterTreeShield_CompAbilityEffectApply
     {
+        public static IEnumerable<MethodBase> TargetMethods()
+        {
+            Type baseType = typeof(CompAbilityEffect);
+            Type[] parameterTypes =
+            {
+                typeof(LocalTargetInfo),
+                typeof(LocalTargetInfo)
+            };
+
+            foreach (Type type in baseType.Assembly.GetTypes())
+            {
+                if (type == null || !baseType.IsAssignableFrom(type))
+                    continue;
+
+                MethodInfo method = AccessTools.DeclaredMethod(
+                    type,
+                    nameof(CompAbilityEffect.Apply),
+                    parameterTypes
+                );
+
+                if (method != null && !method.IsAbstract)
+                {
+                    yield return method;
+                }
+            }
+        }
+
         public static bool Prefix(CompAbilityEffect __instance, LocalTargetInfo target, LocalTargetInfo dest)
         {
             Ability ability = __instance?.parent;
@@ -88,22 +116,30 @@ namespace SignalInterceptor
             if (ability.def.category != null && ability.def.category.defName == "Psycast")
                 return true;
 
-            if (ability.def.defName == "Stun" ||
-                ability.def.defName == "Skip" ||
-                ability.def.defName == "Beckon" ||
-                ability.def.defName == "Burden" ||
-                ability.def.defName == "Berserk" ||
-                ability.def.defName == "BerserkPulse" ||
-                ability.def.defName == "BlindingPulse" ||
-                ability.def.defName == "VertigoPulse" ||
-                ability.def.defName == "ChaosSkip" ||
-                ability.def.defName == "MassChaosSkip" ||
-                ability.def.defName == "ManhunterPulse")
+            switch (ability.def.defName)
             {
-                return true;
+                case "Stun":
+                case "Skip":
+                case "Beckon":
+                case "Burden":
+                case "Berserk":
+                case "BerserkPulse":
+                case "BlindingPulse":
+                case "VertigoPulse":
+                case "ChaosSkip":
+                case "MassChaosSkip":
+                case "ManhunterPulse":
+                case "Painblock":
+                case "Neuroquake":
+                case "WordOfTrust":
+                case "WordOfJoy":
+                case "WordOfLove":
+                case "WordOfSerenity":
+                case "WordOfInspiration":
+                    return true;
+                default:
+                    return false;
             }
-
-            return false;
         }
 
         private static bool ShouldBlockPsycastAgainstPawn(Pawn caster, Pawn target)
