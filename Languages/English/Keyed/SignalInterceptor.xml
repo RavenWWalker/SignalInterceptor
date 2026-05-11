@@ -216,4 +216,8 @@
 
   <SI_PsycasterTreeShieldBlocked>The psycast is dispersed by the anima tree resonance.</SI_PsycasterTreeShieldBlocked>
 
+  <SI_PsycasterNeurostormTitle>Neurostorm</SI_PsycasterNeurostormTitle>
+  <SI_PsycasterNeurostormText>The psychic shock inflicted on {0} ruptured the unstable link with the anima tree. A neurostorm swept through the site. Factions affected: {1}. Pawns driven into mental breaks: {2}.</SI_PsycasterNeurostormText>
+  <SI_PsycasterNeurostormMentalBreakReason>neurostorm</SI_PsycasterNeurostormMentalBreakReason>
+
 </LanguageData>

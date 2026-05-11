@@ -44,6 +44,8 @@ namespace SignalInterceptor
         public bool psycasterDestabilized;
         public bool psycasterWasShocked;
         public Thing psycasterAnimaTree;
+        public bool psycasterNeurostormTriggered;
+        public bool psycasterTreeDestroyedLetterSent;
 
         /// <summary>
         /// Мозг пси-кастера. Не сериализуется — после загрузки сейва пересоздаётся
@@ -96,6 +98,8 @@ namespace SignalInterceptor
             Scribe_Values.Look(ref psycasterDestabilized, "psycasterDestabilized", false);
             Scribe_Values.Look(ref psycasterWasShocked, "psycasterWasShocked", false);
             Scribe_References.Look(ref psycasterAnimaTree, "psycasterAnimaTree");
+            Scribe_Values.Look(ref psycasterNeurostormTriggered, "psycasterNeurostormTriggered", false);
+            Scribe_Values.Look(ref psycasterTreeDestroyedLetterSent, "psycasterTreeDestroyedLetterSent", false);
         }
     }
 

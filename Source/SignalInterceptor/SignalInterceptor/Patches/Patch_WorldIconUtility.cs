@@ -30,13 +30,13 @@ namespace SignalInterceptor
     {
         public static void Prefix()
         {
-            SignalInterceptorWorldIconUtility.ClearRects();
+            Patch_WorldIconUtility.ClearRects();
         }
 
         public static void Postfix()
         {
-            SignalInterceptorWorldIconUtility.DrawNormalIconsOverGreenLayer();
-            SignalInterceptorWorldIconUtility.ClearRects();
+            Patch_WorldIconUtility.DrawNormalIconsOverGreenLayer();
+            Patch_WorldIconUtility.ClearRects();
         }
     }
 
@@ -65,13 +65,13 @@ namespace SignalInterceptor
 
         public static void Postfix(WorldObject o, float factor, ref Rect __result)
         {
-            SignalInterceptorWorldIconUtility.IconOverlaySettings settings;
+            Patch_WorldIconUtility.IconOverlaySettings settings;
 
-            if (!SignalInterceptorWorldIconUtility.TryGetOverlaySettings(o, out settings))
+            if (!Patch_WorldIconUtility.TryGetOverlaySettings(o, out settings))
                 return;
 
             Rect normalRect = __result;
-            SignalInterceptorWorldIconUtility.StoreNormalRect(o, normalRect);
+            Patch_WorldIconUtility.StoreNormalRect(o, normalRect);
 
             Rect greenRect = normalRect;
             greenRect.x -= settings.extraPixelsHorizontal;
@@ -97,16 +97,16 @@ namespace SignalInterceptor
 
         public static void Postfix(WorldObject __instance, ref Color __result)
         {
-            SignalInterceptorWorldIconUtility.IconOverlaySettings settings;
+            Patch_WorldIconUtility.IconOverlaySettings settings;
 
-            if (!SignalInterceptorWorldIconUtility.TryGetOverlaySettings(__instance, out settings))
+            if (!Patch_WorldIconUtility.TryGetOverlaySettings(__instance, out settings))
                 return;
 
             __result = HasMapGreen;
         }
     }
 
-    internal static class SignalInterceptorWorldIconUtility
+    internal static class Patch_WorldIconUtility
     {
         public enum TopIconColorMode
         {

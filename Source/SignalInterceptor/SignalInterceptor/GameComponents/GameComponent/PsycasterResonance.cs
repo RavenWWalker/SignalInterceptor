@@ -46,10 +46,18 @@ namespace SignalInterceptor
                 return;
             }
 
+            bool hadKnownTree = data.psycasterAnimaTree != null;
+            bool knownTreeInvalid = hadKnownTree && !IsValidPsycasterAnimaTree(data.psycasterAnimaTree, siteMap);
+
             Thing tree = GetOrFindPsycasterAnimaTree(data, siteMap);
 
             if (!IsValidPsycasterAnimaTree(tree, siteMap))
             {
+                if (knownTreeInvalid)
+                {
+                    SendPsycasterTreeDestroyedLetter(data, psycaster);
+                }
+
                 RemovePsycasterResonanceFromMap(siteMap);
                 RemovePsycasterTreeShield(psycaster);
                 EndPsycasterResonanceCondition(siteMap);
@@ -59,6 +67,31 @@ namespace SignalInterceptor
             EnsurePsycasterResonanceCondition(siteMap, tree, psycaster);
             ApplyPsycasterResonanceToMap(siteMap, psycaster);
         }
+
+        private void SendPsycasterTreeDestroyedLetter(VIPSiteData data, Pawn psycaster)
+        {
+            if (data == null)
+                return;
+
+            if (data.psycasterTreeDestroyedLetterSent)
+                return;
+
+            data.psycasterTreeDestroyedLetterSent = true;
+
+            string psycasterName = psycaster != null
+                ? psycaster.LabelShort
+                : "SI_PsycasterUnknown".Translate().ToString();
+
+            Find.LetterStack.ReceiveLetter(
+                "SI_PsycasterTreeDestroyedTitle".Translate(),
+                "SI_PsycasterTreeDestroyedText".Translate(psycasterName),
+                LetterDefOf.NeutralEvent,
+                psycaster != null ? new LookTargets(psycaster) : null
+            );
+
+            Log.Message("[Signal Interceptor] Psycaster anima tree destroyed. Shield and resonance removed. Psycaster=" + psycasterName);
+        }
+
 
         private Thing GetOrFindPsycasterAnimaTree(VIPSiteData data, Map map)
         {

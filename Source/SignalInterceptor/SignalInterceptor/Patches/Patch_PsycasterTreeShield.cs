@@ -63,6 +63,89 @@ namespace SignalInterceptor
         }
     }
 
+    [HarmonyPatch]
+    public static class Patch_PsycasterTreeShield_CompTargetEffectDoEffectOn
+    {
+        public static IEnumerable<MethodBase> TargetMethods()
+        {
+            Type baseType = typeof(CompTargetEffect);
+            Type[] parameterTypes =
+            {
+                typeof(Pawn),
+                typeof(Thing)
+            };
+
+            foreach (Type type in baseType.Assembly.GetTypes())
+            {
+                if (type == null || !baseType.IsAssignableFrom(type))
+                    continue;
+
+                MethodInfo method = AccessTools.DeclaredMethod(
+                    type,
+                    nameof(CompTargetEffect.DoEffectOn),
+                    parameterTypes
+                );
+
+                if (method != null && !method.IsAbstract)
+                {
+                    yield return method;
+                }
+            }
+        }
+
+        public static bool Prefix(CompTargetEffect __instance, Pawn user, Thing target)
+        {
+            Pawn targetPawn = target as Pawn;
+
+            if (targetPawn == null)
+                return true;
+
+            if (!PsycasterTreeShieldUtility.IsPsychicLanceEffect(__instance))
+                return true;
+
+            if (!SignalInterceptorGameComponent.HasPsycasterTreeShield(targetPawn))
+                return true;
+
+            if (user != null && user.Faction == Faction.OfPlayer)
+            {
+                Messages.Message(
+                    "SI_PsycasterTreeShieldBlocked".Translate(),
+                    new LookTargets(targetPawn),
+                    MessageTypeDefOf.RejectInput,
+                    historical: false
+                );
+            }
+
+            if (Prefs.DevMode)
+            {
+                Log.Message("[Signal Interceptor] Psychic lance blocked by anima shield. " +
+                            "User=" + (user != null ? user.LabelShort : "null") +
+                            " | Target=" + targetPawn.LabelShort +
+                            " | Effect=" + PsycasterTreeShieldUtility.GetTargetEffectDebugName(__instance));
+            }
+
+            return false;
+        }
+
+        public static void Postfix(CompTargetEffect __instance, Pawn user, Thing target)
+        {
+            Pawn targetPawn = target as Pawn;
+
+            if (targetPawn == null)
+                return;
+
+            if (!PsycasterTreeShieldUtility.IsPsychicShockLanceEffect(__instance))
+                return;
+
+            SignalInterceptorGameComponent comp = Current.Game?.GetComponent<SignalInterceptorGameComponent>();
+
+            if (comp == null)
+                return;
+
+            comp.NotifyPsycasterShockLanceUsed(targetPawn, user);
+        }
+    }
+
     public static class PsycasterTreeShieldUtility
     {
         public static bool ShouldBlockAbility(Ability ability, LocalTargetInfo target)
@@ -168,6 +251,60 @@ namespace SignalInterceptor
                 return caster.Faction.HostileTo(target.Faction);
 
             return caster.HostileTo(target);
+        }
+
+        public static bool IsPsychicLanceEffect(CompTargetEffect effect)
+        {
+            if (effect == null)
+                return false;
+
+            string effectName = GetTargetEffectDebugName(effect);
+
+            if (effectName.IndexOf("PsychicShock", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (effectName.IndexOf("PsychicInsanity", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (effectName.IndexOf("Insanity", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (effectName.IndexOf("ShockLance", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (effectName.IndexOf("InsanityLance", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            return false;
+        }
+
+        public static bool IsPsychicShockLanceEffect(CompTargetEffect effect)
+        {
+            if (effect == null)
+                return false;
+
+            string effectName = GetTargetEffectDebugName(effect);
+
+            if (effectName.IndexOf("PsychicShock", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (effectName.IndexOf("ShockLance", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            return false;
+        }
+
+        public static string GetTargetEffectDebugName(CompTargetEffect effect)
+        {
+            if (effect == null)
+                return string.Empty;
+
+            string typeName = effect.GetType().Name ?? string.Empty;
+            string parentDef = effect.parent != null && effect.parent.def != null
+                ? effect.parent.def.defName
+                : string.Empty;
+
+            return typeName + "|" + parentDef;
         }
 
         public static void NotifyBlocked(Ability ability, LocalTargetInfo target)

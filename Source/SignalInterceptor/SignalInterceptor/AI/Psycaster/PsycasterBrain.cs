@@ -1538,6 +1538,9 @@ namespace SignalInterceptor.AI.Psycaster
             if (caster == null || !caster.Spawned || caster.Map == null)
                 return false;
 
+            if (caster.IsBurning())
+                return true;
+
             List<Thing> things = caster.Position.GetThingList(caster.Map);
 
             if (things != null)
@@ -1554,27 +1557,6 @@ namespace SignalInterceptor.AI.Psycaster
 
                     if (t.def != null && t.def.defName == "Fire")
                         return true;
-                }
-            }
-
-            if (caster.health != null && caster.health.hediffSet != null)
-            {
-                List<Hediff> hediffs = caster.health.hediffSet.hediffs;
-
-                for (int i = 0; i < hediffs.Count; i++)
-                {
-                    Hediff h = hediffs[i];
-
-                    if (h == null || h.def == null || h.def.defName == null)
-                        continue;
-
-                    string defName = h.def.defName;
-
-                    if (defName.IndexOf("Burn", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        defName.IndexOf("Fire", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        return true;
-                    }
                 }
             }
 
