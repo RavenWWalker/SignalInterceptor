@@ -499,7 +499,13 @@ namespace SignalInterceptor
                 available.Add(VIPSubtype.MechanitorSignalVIP);
 
             if (ModsConfig.IdeologyActive)
-                available.Add(VIPSubtype.PilgrimVIP);
+            {
+                // Pilgrim VIP спавнится только для племенных/неолитических фракций
+                if (faction.def.techLevel <= TechLevel.Neolithic)
+                {
+                    available.Add(VIPSubtype.PilgrimVIP);
+                }
+            }
 
             if (ModsConfig.AnomalyActive)
                 available.Add(VIPSubtype.DoppelgangerVIP);
@@ -802,18 +808,17 @@ namespace SignalInterceptor
 
                 case VIPSubtype.PsycasterVIP:
                     signalTier = 0;
-                    return TryFindLooseSiteTile(map, 12, 95, out tile);
+                    return TryFindPsycasterSiteTile(map, out tile);
 
                 case VIPSubtype.PilgrimVIP:
                     signalTier = 0;
-                    return TryFindLooseSiteTile(map, 12, 95, out tile);
+                    return TryFindPilgrimSiteTile(map, faction, out tile);
 
                 default:
                     signalTier = 0;
                     return TryFindLooseSiteTile(map, 12, 95, out tile);
             }
         }
-
 
         private bool TryFindDoppelgangerSiteTile(Map map, out PlanetTile resultTile, out int signalTier)
         {
@@ -946,121 +951,133 @@ namespace SignalInterceptor
             resultTile = PlanetTile.Invalid;
             signalTier = 0;
 
-            if (map == null)
-                return false;
-
+            if (map == null) return false;
             PlanetTile playerTile = map.Tile;
 
+            // Дистанция: подальше от игрока (от 45 до 140 тайлов)
             const int attempts = 800;
-            const float minDistanceFromPlayer = 20f;
-            const float maxDistanceFromPlayer = 130f;
-            const float minSettlementDistance = 6f;
-
-            List<WeightedSiteTile> candidates = new List<WeightedSiteTile>();
+            List<PlanetTile> candidates = new List<PlanetTile>();
 
             for (int i = 0; i < attempts; i++)
             {
-                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, minDist: 20, maxDist: 130))
-                    continue;
-
-                if (!IsValidSiteTile(tile))
-                    continue;
-
-                if (tile.LayerDef != playerTile.LayerDef)
-                    continue;
-
-                if (!IsValidDistancePair(playerTile, tile))
-                    continue;
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 45, 140)) continue;
+                if (!IsValidSiteTile(tile)) continue;
+                if (tile.LayerDef != playerTile.LayerDef) continue;
+                if (!IsValidDistancePair(playerTile, tile)) continue;
 
                 float distanceFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, tile);
+                if (distanceFromPlayer < 45f || distanceFromPlayer > 140f) continue;
 
-                if (distanceFromPlayer < minDistanceFromPlayer || distanceFromPlayer > maxDistanceFromPlayer)
-                    continue;
-
-                float nearestSpecialSiteDistance = DistanceToNearestSignalInterceptorSpecialSite(tile, playerTile);
-
-                if (nearestSpecialSiteDistance >= 0f && nearestSpecialSiteDistance < 15f)
-                    continue;
-
-                float nearestSettlementDistance = DistanceToNearestSettlement(tile, playerTile);
-
-                if (nearestSettlementDistance >= 0f && nearestSettlementDistance < minSettlementDistance)
-                    continue;
-
-                int tier;
-
-                if (distanceFromPlayer < 55f)
-                    tier = 1;
-                else if (distanceFromPlayer < 100f)
-                    tier = 2;
-                else
-                    tier = 3;
-
-                float weight = 1f;
-
-                float pollution = GetTilePollution(tile);
-                if (pollution > 0f)
-                    weight *= Mathf.Lerp(1.5f, 3.5f, Mathf.Clamp01(pollution));
-
-                Hilliness hilliness = Find.WorldGrid[tile].hilliness;
-
-                if (hilliness == Hilliness.SmallHills)
-                    weight *= 1.2f;
-                else if (hilliness == Hilliness.LargeHills)
-                    weight *= 1.6f;
-                else if (hilliness == Hilliness.Mountainous)
-                    weight *= 2.0f;
-
-                if (IsPreferredMechanitorBiome(tile))
-                    weight *= 1.75f;
-
-                if (nearestSettlementDistance >= 0f)
-                    weight *= Mathf.Clamp(nearestSettlementDistance / 20f, 0.75f, 2.5f);
-
-                if (TileHasRoad(tile))
-                    weight *= 0.65f;
-
-                candidates.Add(new WeightedSiteTile(tile, weight, tier));
+                candidates.Add(tile);
             }
 
             if (candidates.Count > 0)
             {
-                WeightedSiteTile selected = candidates.RandomElementByWeight(c => c.weight);
+                resultTile = candidates.RandomElement();
+                float dist = Find.WorldGrid.ApproxDistanceInTiles(playerTile, resultTile);
 
-                resultTile = selected.tile;
-                signalTier = selected.signalTier;
-
-                Log.Message("[Signal Interceptor] Mechanitor signal site tile selected. " +
-                            "Tile=" + resultTile +
-                            " | Signal tier=" + signalTier +
-                            " | Candidates=" + candidates.Count);
+                if (dist < 70f) signalTier = 1;
+                else if (dist < 100f) signalTier = 2;
+                else signalTier = 3;
 
                 return true;
             }
 
-            // Fallback: если тематический поиск не нашёл точку — не фейлим квест,
-            // а берём обычный валидный сайт в расширенном радиусе.
-            if (TryFindLooseSiteTile(map, 20, 155, out resultTile))
+            // Fallback
+            if (TryFindLooseSiteTile(map, 45, 155, out resultTile))
             {
-                float distanceFromPlayer = Find.WorldGrid.ApproxDistanceInTiles(playerTile, resultTile);
-
-                if (distanceFromPlayer < 55f)
-                    signalTier = 1;
-                else if (distanceFromPlayer < 100f)
-                    signalTier = 2;
-                else
-                    signalTier = 3;
-
-                Log.Warning("[Signal Interceptor] Mechanitor signal fallback site tile selected. " +
-                            "Tile=" + resultTile +
-                            " | Signal tier=" + signalTier);
-
+                signalTier = 2;
                 return true;
             }
 
-            Log.Message("[Signal Interceptor] Mechanitor signal site tile not found.");
             return false;
         }
+
+        private bool TryFindPilgrimSiteTile(Map map, Faction faction, out PlanetTile resultTile)
+        {
+            resultTile = PlanetTile.Invalid;
+            if (map == null || faction == null) return false;
+
+            // Ищем поселения этой фракции
+            List<Settlement> tribalSettlements = Find.WorldObjects.Settlements
+                .Where(s => s.Faction == faction && s.Tile.Valid && s.Tile.LayerDef == map.Tile.LayerDef)
+                .ToList();
+
+            if (tribalSettlements.Count == 0)
+            {
+                // На случай, если у племени почему-то нет баз на карте
+                return TryFindLooseSiteTile(map, 12, 60, out resultTile);
+            }
+
+            Settlement anchor = tribalSettlements.RandomElement();
+            PlanetTile anchorTile = anchor.Tile;
+
+            List<PlanetTile> candidates = new List<PlanetTile>();
+            for (int i = 0; i < 500; i++)
+            {
+                // Ищем обычные тайлы
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 12, 95)) continue;
+                if (!IsValidSiteTile(tile)) continue;
+                if (tile.LayerDef != anchorTile.LayerDef) continue;
+                if (!IsValidDistancePair(anchorTile, tile)) continue;
+
+                float distToAnchor = Find.WorldGrid.ApproxDistanceInTiles(anchorTile, tile);
+
+                // Пилигримы должны быть недалеко от родного поселения (от 2 до 15 тайлов)
+                if (distToAnchor >= 2f && distToAnchor <= 15f)
+                {
+                    candidates.Add(tile);
+                }
+            }
+
+            if (candidates.Count > 0)
+            {
+                resultTile = candidates.RandomElement();
+                return true;
+            }
+
+            return TryFindLooseSiteTile(map, 12, 60, out resultTile);
+        }
+
+        private bool TryFindPsycasterSiteTile(Map map, out PlanetTile resultTile)
+        {
+            resultTile = PlanetTile.Invalid;
+            if (map == null) return false;
+
+            PlanetTile playerTile = map.Tile;
+            List<PlanetTile> candidates = new List<PlanetTile>();
+
+            for (int i = 0; i < 600; i++)
+            {
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 15, 80)) continue;
+                if (!IsValidSiteTile(tile)) continue;
+                if (tile.LayerDef != playerTile.LayerDef) continue;
+                if (!IsValidDistancePair(playerTile, tile)) continue;
+
+                // БЕЗ landmarks: запрещаем пещеры, которые могут заспавнить спящих инсектоидов (причина зависания)
+                if (Find.WorldGrid[tile].caves) continue;
+
+                candidates.Add(tile);
+            }
+
+            if (candidates.Count > 0)
+            {
+                // Если есть тайлы с дорогами — берем их в приоритете, иначе случайный
+                var withRoad = candidates.Where(t => TileHasRoad(t)).ToList();
+                if (withRoad.Count > 0)
+                {
+                    resultTile = withRoad.RandomElement();
+                }
+                else
+                {
+                    resultTile = candidates.RandomElement();
+                }
+                return true;
+            }
+
+            return TryFindLooseSiteTile(map, 15, 80, out resultTile);
+        }
+
 
         private float DistanceToNearestSettlement(PlanetTile tile, PlanetTile layerReferenceTile)
         {
