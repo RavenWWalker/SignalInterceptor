@@ -1,12 +1,14 @@
 ﻿using Verse;
+using RimWorld;
 
 namespace SignalInterceptor.AI.Psycaster
 {
     /// <summary>
     /// Skipshield.
     /// Приоритет:
-    /// 1) закрыть опасных дальников куполом, чтобы они не стреляли по кастеру;
-    /// 2) если HP низкое / кастер под огнём — поставить купол на себя.
+    /// 1) Мили-кастеры ставят на себя, чтобы безопасно вытягивать противников в ближний бой;
+    /// 2) закрыть опасных дальников куполом, чтобы они не стреляли по кастеру;
+    /// 3) если HP низкое / кастер под огнём — поставить купол на себя.
     /// </summary>
     public class Scorer_Skipshield : AbilityScorerBase
     {
@@ -66,25 +68,36 @@ namespace SignalInterceptor.AI.Psycaster
                 }
             }
 
+            // Проверяем, является ли псикастер бойцом ближнего боя
+            bool isMeleeCaster = snap.caster.equipment?.Primary != null && snap.caster.equipment.Primary.def.IsMeleeWeapon;
+
             bool hpTrigger = snap.casterHpFraction <= 0.55f;
             bool fireTrigger = rangedLos >= 2;
             bool severeFire = rangedLos >= 3 || snap.totalIncomingDps >= 24f;
             bool entropyDanger = snap.casterEntropyFraction >= 0.70f && snap.casterHpFraction <= 0.65f;
 
-            if (!hpTrigger && !fireTrigger && !severeFire && !entropyDanger)
+            // Новый триггер: милишнику выгодно ставить щит, даже если стрелков немного, 
+            // чтобы подготовить "арену" для Skip.
+            bool meleeArenaTrigger = isMeleeCaster && rangedLos >= 1 && snap.casterEntropyFraction < 0.60f;
+
+            if (!hpTrigger && !fireTrigger && !severeFire && !entropyDanger && !meleeArenaTrigger)
                 return ScoredAction.None;
 
             IntVec3 targetCell = snap.caster.Position;
             string mode = "self";
 
-            // Если есть опасный дальник на дистанции — первично купол на него/их позицию.
-            // Это режет линию огня и даёт кастеру окно.
-            if (bestRanged != null &&
+            // Если кастер не милишник, и есть опасный дальник на дистанции — первично купол на него/их позицию.
+            // Милишнику же всегда выгоднее ставить купол на СЕБЯ, чтобы вытягивать туда врагов.
+            if (!isMeleeCaster && bestRanged != null &&
                 bestRanged.distanceToCaster >= 6f &&
                 GenSight.LineOfSight(snap.caster.Position, bestRanged.pawn.Position, snap.map))
             {
                 targetCell = bestRanged.pawn.Position;
                 mode = "ranged";
+            }
+            else if (isMeleeCaster && meleeArenaTrigger)
+            {
+                mode = "melee_arena";
             }
 
             float raw = 6f;
@@ -103,6 +116,10 @@ namespace SignalInterceptor.AI.Psycaster
 
             if (brain.CurrentStance == PsycasterStance.Survive)
                 raw += 10f;
+
+            // Накидываем жирный бонус за подготовку Арены, если псикастер милишник
+            if (mode == "melee_arena")
+                raw += 15f;
 
             ScoredAction action = new ScoredAction();
             action.abilityDefName = AbilityDefName;
