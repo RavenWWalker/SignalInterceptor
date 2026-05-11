@@ -946,6 +946,89 @@ namespace SignalInterceptor
             return true;
         }
 
+        private bool TryFindPsycasterSiteTile(Map map, out PlanetTile resultTile)
+        {
+            resultTile = PlanetTile.Invalid;
+            if (map == null) return false;
+
+            PlanetTile playerTile = map.Tile;
+            List<PlanetTile> candidates = new List<PlanetTile>();
+
+            for (int i = 0; i < 600; i++)
+            {
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 15, 80)) continue;
+
+                Tile tileData = Find.WorldGrid[tile];
+
+                if (tileData.WaterCovered || tileData.hilliness == Hilliness.Impassable) continue;
+                if (Find.WorldObjects.AnyWorldObjectAt(tile)) continue;
+
+                // Ванильная проверка на наличие пещер в тайле (чтобы не было спящих инсектоидов)
+                if (Find.World.HasCaves((int)tile)) continue;
+
+                candidates.Add(tile);
+            }
+
+            if (candidates.Count > 0)
+            {
+                var withRoad = candidates.Where(t => TileHasRoad(t)).ToList();
+
+                if (withRoad.Count > 0)
+                    resultTile = withRoad.RandomElement();
+                else
+                    resultTile = candidates.RandomElement();
+
+                return true;
+            }
+
+            return TryFindLooseSiteTile(map, 15, 80, out resultTile);
+        }
+
+        private bool TryFindPilgrimSiteTile(Map map, Faction faction, out PlanetTile resultTile)
+        {
+            resultTile = PlanetTile.Invalid;
+            if (map == null || faction == null) return false;
+
+            List<Settlement> tribalSettlements = Find.WorldObjects.Settlements
+                .Where(s => s.Faction == faction && s.Tile.Valid && s.Tile.LayerDef == map.Tile.LayerDef)
+                .ToList();
+
+            if (tribalSettlements.Count == 0)
+                return TryFindLooseSiteTile(map, 12, 60, out resultTile);
+
+            Settlement anchor = tribalSettlements.RandomElement();
+            PlanetTile anchorTile = anchor.Tile;
+
+            List<PlanetTile> candidates = new List<PlanetTile>();
+            for (int i = 0; i < 500; i++)
+            {
+                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 12, 95)) continue;
+
+                Tile tileData = Find.WorldGrid[tile];
+
+                if (tileData.WaterCovered || tileData.hilliness == Hilliness.Impassable) continue;
+                if (Find.WorldObjects.AnyWorldObjectAt(tile)) continue;
+                if (tile.LayerDef != anchorTile.LayerDef) continue;
+                if (!IsValidDistancePair(anchorTile, tile)) continue;
+
+                float distToAnchor = Find.WorldGrid.ApproxDistanceInTiles(anchorTile, tile);
+
+                // Пилигримы спавнятся недалеко от родного поселения
+                if (distToAnchor >= 2f && distToAnchor <= 15f)
+                {
+                    candidates.Add(tile);
+                }
+            }
+
+            if (candidates.Count > 0)
+            {
+                resultTile = candidates.RandomElement();
+                return true;
+            }
+
+            return TryFindLooseSiteTile(map, 12, 60, out resultTile);
+        }
+
         private bool TryFindMechanitorSignalSiteTile(Map map, out PlanetTile resultTile, out int signalTier)
         {
             resultTile = PlanetTile.Invalid;
@@ -954,14 +1037,16 @@ namespace SignalInterceptor
             if (map == null) return false;
             PlanetTile playerTile = map.Tile;
 
-            // Дистанция: подальше от игрока (от 45 до 140 тайлов)
             const int attempts = 800;
             List<PlanetTile> candidates = new List<PlanetTile>();
 
             for (int i = 0; i < attempts; i++)
             {
                 if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 45, 140)) continue;
-                if (!IsValidSiteTile(tile)) continue;
+
+                Tile tileData = Find.WorldGrid[tile];
+                if (tileData.WaterCovered || tileData.hilliness == Hilliness.Impassable) continue;
+                if (Find.WorldObjects.AnyWorldObjectAt(tile)) continue;
                 if (tile.LayerDef != playerTile.LayerDef) continue;
                 if (!IsValidDistancePair(playerTile, tile)) continue;
 
@@ -983,7 +1068,6 @@ namespace SignalInterceptor
                 return true;
             }
 
-            // Fallback
             if (TryFindLooseSiteTile(map, 45, 155, out resultTile))
             {
                 signalTier = 2;
@@ -992,92 +1076,6 @@ namespace SignalInterceptor
 
             return false;
         }
-
-        private bool TryFindPilgrimSiteTile(Map map, Faction faction, out PlanetTile resultTile)
-        {
-            resultTile = PlanetTile.Invalid;
-            if (map == null || faction == null) return false;
-
-            // Ищем поселения этой фракции
-            List<Settlement> tribalSettlements = Find.WorldObjects.Settlements
-                .Where(s => s.Faction == faction && s.Tile.Valid && s.Tile.LayerDef == map.Tile.LayerDef)
-                .ToList();
-
-            if (tribalSettlements.Count == 0)
-            {
-                // На случай, если у племени почему-то нет баз на карте
-                return TryFindLooseSiteTile(map, 12, 60, out resultTile);
-            }
-
-            Settlement anchor = tribalSettlements.RandomElement();
-            PlanetTile anchorTile = anchor.Tile;
-
-            List<PlanetTile> candidates = new List<PlanetTile>();
-            for (int i = 0; i < 500; i++)
-            {
-                // Ищем обычные тайлы
-                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 12, 95)) continue;
-                if (!IsValidSiteTile(tile)) continue;
-                if (tile.LayerDef != anchorTile.LayerDef) continue;
-                if (!IsValidDistancePair(anchorTile, tile)) continue;
-
-                float distToAnchor = Find.WorldGrid.ApproxDistanceInTiles(anchorTile, tile);
-
-                // Пилигримы должны быть недалеко от родного поселения (от 2 до 15 тайлов)
-                if (distToAnchor >= 2f && distToAnchor <= 15f)
-                {
-                    candidates.Add(tile);
-                }
-            }
-
-            if (candidates.Count > 0)
-            {
-                resultTile = candidates.RandomElement();
-                return true;
-            }
-
-            return TryFindLooseSiteTile(map, 12, 60, out resultTile);
-        }
-
-        private bool TryFindPsycasterSiteTile(Map map, out PlanetTile resultTile)
-        {
-            resultTile = PlanetTile.Invalid;
-            if (map == null) return false;
-
-            PlanetTile playerTile = map.Tile;
-            List<PlanetTile> candidates = new List<PlanetTile>();
-
-            for (int i = 0; i < 600; i++)
-            {
-                if (!TileFinder.TryFindNewSiteTile(out PlanetTile tile, 15, 80)) continue;
-                if (!IsValidSiteTile(tile)) continue;
-                if (tile.LayerDef != playerTile.LayerDef) continue;
-                if (!IsValidDistancePair(playerTile, tile)) continue;
-
-                // БЕЗ landmarks: запрещаем пещеры, которые могут заспавнить спящих инсектоидов (причина зависания)
-                if (Find.WorldGrid[tile].caves) continue;
-
-                candidates.Add(tile);
-            }
-
-            if (candidates.Count > 0)
-            {
-                // Если есть тайлы с дорогами — берем их в приоритете, иначе случайный
-                var withRoad = candidates.Where(t => TileHasRoad(t)).ToList();
-                if (withRoad.Count > 0)
-                {
-                    resultTile = withRoad.RandomElement();
-                }
-                else
-                {
-                    resultTile = candidates.RandomElement();
-                }
-                return true;
-            }
-
-            return TryFindLooseSiteTile(map, 15, 80, out resultTile);
-        }
-
 
         private float DistanceToNearestSettlement(PlanetTile tile, PlanetTile layerReferenceTile)
         {
