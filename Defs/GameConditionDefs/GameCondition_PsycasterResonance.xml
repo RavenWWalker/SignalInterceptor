@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+
+  <GameConditionDef>
+    <defName>SI_PsycasterResonance</defName>
+    <label>psychic resonance</label>
+    <description>The anima tree resonates across the site, increasing psychic sensitivity and shielding the hostile psycaster.</description>
+    <conditionClass>SignalInterceptor.GameCondition_PsycasterResonance</conditionClass>
+    <canOccurRandomly>false</canOccurRandomly>
+  </GameConditionDef>
+
+</Defs>

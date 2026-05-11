@@ -6,12 +6,131 @@ namespace SignalInterceptor
 {
     public class GenStep_PsycasterArena : GenStep
     {
-        public override int SeedPart => 74129845; // Уникальный сид для GenStep
+        public override int SeedPart => 74129845;
+
+        private static readonly string[] Pattern_01 =
+        {
+            ".....G.....",
+            "...GGGGG...",
+            "..GGGGGGG..",
+            ".GGGGGGGGG.",
+            ".GGGGGGGGG.",
+            "GGGGGTGGGGG",
+            ".GGGGGGGGG.",
+            ".GGGGGGGGG.",
+            "..GGGGGGG..",
+            "...GGGGG...",
+            ".....G....."
+        };
+
+        private static readonly string[] Pattern_02 =
+        {
+            ".....G.....",
+            "..G..G..G..",
+            "...GGGGG...",
+            "..GGGGGGG..",
+            ".GGGGGGGGG.",
+            "GGGGGTGGGGG",
+            ".GGGGGGGGG.",
+            "..GGGGGGG..",
+            "...GGGGG...",
+            "..G..G..G..",
+            ".....G....."
+        };
+
+        private static readonly string[] Pattern_03 =
+        {
+            "...G...G...",
+            "..GG...GG..",
+            ".GGGG.GGGG.",
+            "GGGGGGGGGGG",
+            "...GGGGG...",
+            "...GGTGG...",
+            "...GGGGG...",
+            "GGGGGGGGGGG",
+            ".GGGG.GGGG.",
+            "..GG...GG..",
+            "...G...G..."
+        };
+
+        private static readonly string[] Pattern_04 =
+        {
+            "....GGG....",
+            "..GGGGGGG..",
+            ".GGG...GGG.",
+            ".GG.....GG.",
+            "GGG..G..GGG",
+            "GG...T...GG",
+            "GGG..G..GGG",
+            ".GG.....GG.",
+            ".GGG...GGG.",
+            "..GGGGGGG..",
+            "....GGG...."
+        };
+
+        private static readonly string[] Pattern_05 =
+        {
+            "G....G....G",
+            ".G...G...G.",
+            "..G.GGG.G..",
+            "...GGGGG...",
+            "GGGGGGGGGGG",
+            "....GTG....",
+            "GGGGGGGGGGG",
+            "...GGGGG...",
+            "..G.GGG.G..",
+            ".G...G...G.",
+            "G....G....G"
+        };
+
+        private static readonly string[] Pattern_06 =
+        {
+            ".....G.....",
+            "....GGG....",
+            "..G.GGG.G..",
+            ".GGGGGGGGG.",
+            "..GGGGGGG..",
+            "GGGGGTGGGGG",
+            "..GGGGGGG..",
+            ".GGGGGGGGG.",
+            "..G.GGG.G..",
+            "....GGG....",
+            ".....G....."
+        };
+
+        private static readonly string[] Pattern_07 =
+        {
+            "..G.....G..",
+            ".GGG...GGG.",
+            "GGGGG.GGGGG",
+            ".GGGGGGGGG.",
+            "...GGGGG...",
+            "GGGGGTGGGGG",
+            "...GGGGG...",
+            ".GGGGGGGGG.",
+            "GGGGG.GGGGG",
+            ".GGG...GGG.",
+            "..G.....G.."
+        };
+
+        private static readonly string[][] Patterns =
+        {
+            Pattern_01,
+            Pattern_02,
+            Pattern_03,
+            Pattern_04,
+            Pattern_05,
+            Pattern_06,
+            Pattern_07
+        };
 
         public override void Generate(Map map, GenStepParams parms)
         {
-            // 1. Ищем подходящее место для островка.
-            // Нам нужен центр квадрата 9x9, где нет непроходимых скал и воды.
+            if (!ModsConfig.RoyaltyActive)
+            {
+                return;
+            }
+
             IntVec3 center;
             if (!TryFindArenaCenter(map, out center))
             {
@@ -19,24 +138,26 @@ namespace SignalInterceptor
                 return;
             }
 
-            // 2. Рисуем островок (меняем террейн на почву) и сажаем дерево с травой.
             GenerateArenaAt(center, map);
         }
 
         private bool TryFindArenaCenter(Map map, out IntVec3 center)
         {
-            return CellFinderLoose.TryFindRandomNotEdgeCellWith(15, c =>
+            return CellFinderLoose.TryFindRandomNotEdgeCellWith(18, c =>
             {
-                if (!c.Standable(map)) return false;
+                if (!c.Standable(map))
+                    return false;
 
-                // Проверяем, что вокруг в радиусе 6 клеток нет воды и непроходимых скал
-                foreach (IntVec3 adj in GenRadial.RadialCellsAround(c, 6f, true))
+                foreach (IntVec3 adj in GenRadial.RadialCellsAround(c, 8f, true))
                 {
-                    if (!adj.InBounds(map)) return false;
+                    if (!adj.InBounds(map))
+                        return false;
+
                     TerrainDef terrain = adj.GetTerrain(map);
                     if (terrain == null || terrain.IsWater || terrain.passability == Traversability.Impassable)
                         return false;
                 }
+
                 return true;
             }, map, out center);
         }
@@ -45,90 +166,95 @@ namespace SignalInterceptor
         {
             ThingDef animaTreeDef = DefDatabase<ThingDef>.GetNamedSilentFail("Plant_TreeAnima");
             ThingDef animaGrassDef = DefDatabase<ThingDef>.GetNamedSilentFail("Plant_GrassAnima");
-            TerrainDef soilDef = TerrainDefOf.Soil; // Или TerrainDefOf.MossyTerrain для атмосферы
+            TerrainDef soilDef = TerrainDefOf.Soil;
 
             if (animaTreeDef == null || animaGrassDef == null)
             {
-                Log.Error("[Signal Interceptor] Missing Anima Tree or Grass Defs. Is Royalty active?");
+                Log.Error("[Signal Interceptor] Missing Anima Tree or Anima Grass Defs. Royalty is probably inactive or defs changed.");
                 return;
             }
 
-            // Шаблон твоего островка 9x9
-            // 0 = не трогаем (Х)
-            // 1 = земля + трава (Д)
-            // 2 = центр (О)
-            int[,] pattern = new int[9, 9]
-            {
-                { 0, 0, 0, 1, 1, 1, 0, 0, 0 },
-                { 0, 1, 1, 1, 1, 1, 1, 1, 0 },
-                { 0, 1, 1, 1, 1, 1, 1, 1, 0 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 1, 1, 1, 1, 2, 1, 1, 1, 1 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 0, 1, 1, 1, 1, 1, 1, 1, 0 },
-                { 0, 1, 1, 1, 1, 1, 1, 1, 0 },
-                { 0, 0, 0, 1, 1, 1, 0, 0, 0 }
-            };
-
+            string[] pattern = Patterns.RandomElement();
             List<IntVec3> grassCells = new List<IntVec3>();
 
-            // Проходимся по сетке 9x9 (от -4 до +4 от центра)
-            for (int x = -4; x <= 4; x++)
+            int size = pattern.Length;
+            int half = size / 2;
+
+            for (int row = 0; row < size; row++)
             {
-                for (int z = -4; z <= 4; z++)
+                string line = pattern[row];
+
+                for (int col = 0; col < line.Length; col++)
                 {
-                    int gridX = x + 4;
-                    int gridZ = z + 4; // Z идет снизу вверх
+                    char symbol = line[col];
 
-                    int cellType = pattern[8 - gridZ, gridX]; // Переворачиваем Z для визуального соответствия массиву
+                    if (symbol != 'G' && symbol != 'T')
+                        continue;
 
-                    if (cellType == 0) continue; // Это 'Х'
+                    int x = col - half;
+                    int z = half - row;
 
-                    IntVec3 c = center + new IntVec3(x, 0, z);
-                    if (!c.InBounds(map)) continue;
+                    IntVec3 cell = center + new IntVec3(x, 0, z);
 
-                    // Очищаем клетку от мусора, камней и старых растений
-                    ClearCell(c, map);
+                    if (!cell.InBounds(map))
+                        continue;
 
-                    // Стелим почву, если это не так
-                    map.terrainGrid.SetTerrain(c, soilDef);
+                    ClearCell(cell, map);
+                    map.terrainGrid.SetTerrain(cell, soilDef);
 
-                    if (cellType == 2)
+                    if (symbol == 'T')
                     {
-                        // Сажаем Дерево (О)
-                        Plant tree = (Plant)GenSpawn.Spawn(animaTreeDef, c, map);
-                        tree.Growth = 1f; // Делаем его полностью выросшим
-
-                        // Добавляем к дереву наш кастомный Comp для излучения Пси-поля
-                        // (Его мы напишем в Шаге 2)
+                        Plant tree = GenSpawn.Spawn(animaTreeDef, cell, map) as Plant;
+                        if (tree != null)
+                        {
+                            tree.Growth = 1f;
+                            tree.HitPoints = tree.MaxHitPoints;
+                        }
                     }
-                    else if (cellType == 1)
+                    else
                     {
-                        // Запоминаем клетки для травы (Д)
-                        grassCells.Add(c);
+                        grassCells.Add(cell);
                     }
                 }
             }
 
-            // Сажаем траву (можно добавить рандомизации, чтобы не было прям монолитно 100% заполнено, 
-            // но по условию сажаем узором).
-            foreach (IntVec3 c in grassCells)
+            foreach (IntVec3 cell in grassCells)
             {
-                // Для красоты можно сделать так, чтобы по углам трава была чуть реже, но пока сажаем везде:
-                Plant grass = (Plant)GenSpawn.Spawn(animaGrassDef, c, map);
-                grass.Growth = 1f;
+                if (!cell.InBounds(map))
+                    continue;
+
+                if (cell.GetPlant(map) != null)
+                    continue;
+
+                Plant grass = GenSpawn.Spawn(animaGrassDef, cell, map) as Plant;
+                if (grass != null)
+                {
+                    grass.Growth = 1f;
+                }
             }
+
+            Log.Message("[Signal Interceptor] Psycaster arena generated. Center=" + center + " Pattern=" + System.Array.IndexOf(Patterns, pattern));
         }
 
         private void ClearCell(IntVec3 c, Map map)
         {
             List<Thing> things = map.thingGrid.ThingsListAt(c);
+
             for (int i = things.Count - 1; i >= 0; i--)
             {
-                Thing t = things[i];
-                if (t.def.destroyable && (t is Plant || t.def.category == ThingCategory.Item || t.def.category == ThingCategory.Building))
+                Thing thing = things[i];
+
+                if (thing == null || thing.Destroyed)
+                    continue;
+
+                if (!thing.def.destroyable)
+                    continue;
+
+                if (thing is Plant ||
+                    thing.def.category == ThingCategory.Item ||
+                    thing.def.category == ThingCategory.Building)
                 {
-                    t.Destroy(DestroyMode.Vanish);
+                    thing.Destroy(DestroyMode.Vanish);
                 }
             }
         }

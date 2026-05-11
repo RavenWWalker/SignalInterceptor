@@ -82,17 +82,33 @@ namespace SignalInterceptor
 
             PreparePsycasterVIPPawn(psycaster, tier, psylinkLevel);
 
-            IntVec3 center = map.Center;
+            IntVec3 anchor = map.Center;
+            Plant animaTree;
+
+            if (TryFindPsycasterAnimaTree(map, out animaTree))
+            {
+                data.psycasterAnimaTree = animaTree;
+                data.signalCampCenter = animaTree.Position;
+                anchor = animaTree.Position;
+            }
+            else
+            {
+                Log.Warning("[Signal Interceptor] Psycaster anima tree was not found on generated map. Falling back to map center.");
+            }
+
             IntVec3 spot;
 
-            if (!CellFinder.TryFindRandomCellNear(
-                center,
-                map,
-                18,
-                c => c.Standable(map) && !c.Roofed(map) && c.GetFirstPawn(map) == null,
-                out spot))
+            if (!TryFindPsycasterSpawnSpotNearTree(map, anchor, out spot))
             {
-                spot = center;
+                if (!CellFinder.TryFindRandomCellNear(
+                    anchor,
+                    map,
+                    18,
+                    c => c.Standable(map) && !c.Roofed(map) && c.GetFirstPawn(map) == null,
+                    out spot))
+                {
+                    spot = anchor;
+                }
             }
 
             GenSpawn.Spawn(psycaster, spot, map);
@@ -103,7 +119,14 @@ namespace SignalInterceptor
             }
 
             data.psycasterPawn = psycaster;
+
+            if (data.signalCampCenter == IntVec3.Invalid)
+            {
+                data.signalCampCenter = spot;
+            }
+
             TryApplyInitialPsycasterBuffs(data, psycaster);
+            TickPsycasterSiteResonance(data);
 
             if (psycaster.mindState == null)
             {
@@ -124,11 +147,13 @@ namespace SignalInterceptor
                 new LookTargets(psycaster)
             );
 
-            Log.Message("[Signal Interceptor] Psycaster VIP spawned. " +
+            Log.Message("[Signal Interceptor] Psycaster VIP spawned near anima tree. " +
                         "Pawn=" + psycaster.LabelShort +
                         " | Faction=" + hostileFaction.Name +
                         " | Tier=" + tier +
-                        " | Psylink=" + psylinkLevel);
+                        " | Psylink=" + psylinkLevel +
+                        " | Tree=" + (data.psycasterAnimaTree != null ? data.psycasterAnimaTree.Position.ToString() : "null") +
+                        " | Spawn=" + spot);
         }
 
         private void CleanupPsycasterVIPSettlements()
