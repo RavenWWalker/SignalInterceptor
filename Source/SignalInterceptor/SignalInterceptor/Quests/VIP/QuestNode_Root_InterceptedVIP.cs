@@ -61,6 +61,7 @@ namespace SignalInterceptor
                 .InRandomOrder()
                 .Take(8)
                 .ToList();
+
             bool foundValidQuestTarget = false;
 
             foreach (Faction factionCandidate in shuffledFactions)
@@ -128,8 +129,8 @@ namespace SignalInterceptor
                 return;
             }
 
-             float threatPoints = GetThreatPoints(subtype, realFaction, siteSignalTier);
-             int timeoutTicks = TimeoutDaysRange.RandomInRange * 10000;
+            float threatPoints = GetThreatPoints(subtype, realFaction, siteSignalTier);
+            int timeoutTicks = TimeoutDaysRange.RandomInRange * 10000;
 
             SitePartDef vipPartDef = GetSitePartDef(subtype);
 
@@ -183,15 +184,15 @@ namespace SignalInterceptor
             );
 
             List<Rule> nameRules = new List<Rule>
-            {
-                new Rule_String("questName", questName)
-            };
+    {
+        new Rule_String("questName", questName)
+    };
             QuestGen.AddQuestNameRules(nameRules);
 
             List<Rule> descRules = new List<Rule>
-            {
-                new Rule_String("questDescription", questDescription)
-            };
+    {
+        new Rule_String("questDescription", questDescription)
+    };
             QuestGen.AddQuestDescriptionRules(descRules);
 
             string questTag = QuestGenUtility.HardcodedTargetQuestTagWithQuestID("InterceptedVIP");
@@ -200,12 +201,16 @@ namespace SignalInterceptor
             quest.SpawnWorldObject(site);
 
             /*
-             * Не используем quest.WorldObjectTimeout(site, timeoutTicks),
-             * чтобы сайт не схлопнулся, если игрок уже вошёл на карту.
-             * Истечение срока контролируется SignalInterceptorGameComponent.
+             * ВАЖНО:
+             * Не используем quest.WorldObjectTimeout(site, timeoutTicks).
+             *
+             * Vanilla QuestPart таймаута может уничтожить world object,
+             * даже если игрок уже вошёл на карту сайта и бой идёт прямо сейчас.
+             *
+             * Таймаут теперь полностью контролируется SignalInterceptorGameComponent.TickVIPSites():
+             * - если карта сайта ещё не загружена — квест фейлится по истечении срока;
+             * - если карта уже активна — таймаут отключается и бой/событие доигрывается нормально.
              */
-
-            quest.WorldObjectTimeout(site, timeoutTicks);
 
             string allEnemiesDefeatedSignal = QuestGenUtility.QuestTagSignal(questTag, "AllEnemiesDefeated");
             quest.SignalPass(delegate
@@ -249,7 +254,7 @@ namespace SignalInterceptor
             SignalInterceptorGameComponent comp = Current.Game.GetComponent<SignalInterceptorGameComponent>();
             if (comp != null)
             {
-                comp.TrackVIPSite(site, threatPoints, realFaction, subtype, -1);
+                comp.TrackVIPSite(site, threatPoints, realFaction, subtype, timeoutTicks);
             }
 
             slate.Set("site", site);
@@ -265,6 +270,8 @@ namespace SignalInterceptor
                         " | Intended site faction: " + (siteFaction?.Name ?? "null") +
                         " | Threat: " + threatPoints +
                         " | Tier: " + vipTier +
+                        " | Timeout ticks: " + timeoutTicks +
+                        " | Timeout handled by GameComponent" +
                         " | Shuttle origin: " + (shuttleOrigin?.LabelCap.ToString() ?? "null") +
                         " | Shuttle destination: " + (shuttleDestination?.LabelCap.ToString() ?? "null"));
         }

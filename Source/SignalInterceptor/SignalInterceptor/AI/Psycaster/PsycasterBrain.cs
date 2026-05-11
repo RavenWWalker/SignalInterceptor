@@ -51,6 +51,8 @@ namespace SignalInterceptor.AI.Psycaster
         private int pendingMeleeTargetThingId = -1;
         private int pendingMeleeUntilTick = -1;
         private string pendingMeleeReason = null;
+        private int pendingMeleeLastLogTargetThingId = -1;
+        private string pendingMeleeLastDistanceZone = null;
         private int killContractTargetThingId = -1;
         private int killContractUntilTick = -1;
         private string killContractReason = null;
@@ -1056,28 +1058,19 @@ namespace SignalInterceptor.AI.Psycaster
             if (restore == null)
                 return false;
 
-            /*
-             * Если реген ещё заблокирован недавним уроном,
-             * можно немного подождать, но только если HP не критический.
-             */
             if (!restore.CanRegenerateNow)
                 return hp >= 0.70f && restore.TicksSinceDamage >= 0;
 
             /*
-             * Если HP уже достаточно высокий — лучше выйти из recovery
-             * через IsRecoveredEnough, а не держать hold.
+             * Было 0.82.
+             * Теперь держим recovery дольше, иначе он выходит/двигается слишком рано,
+             * хотя реген уже может спокойно доделать работу.
              */
-            if (hp >= 0.82f)
+            if (hp >= 0.88f)
                 return false;
 
-            /*
-             * Основной случай:
-             * ранен, но нет кровотечения, нет давления, реген работает.
-             * Значит не надо стартовать новый retreat/Goto.
-             */
             return hp >= 0.45f;
         }
-
 
         private int CountRangedEnemiesWithLosToCaster(BattlefieldSnapshot snap)
         {
@@ -2691,32 +2684,43 @@ namespace SignalInterceptor.AI.Psycaster
             bool pressure = HasRecoveryThreatPressure(snap);
 
             /*
+             * Не выходим из recovery под давлением.
+             */
+            if (pressure)
+                return false;
+
+            /*
+             * Не выходим, пока есть опасное кровотечение.
+             */
+            if (bleeding)
+                return false;
+
+            /*
              * Нормальный чистый выход.
+             * Было 0.92 без проверки pressure в первом условии.
              */
-            if (hp >= 0.92f && !bleeding)
+            if (hp >= 0.95f)
                 return true;
 
             /*
-             * Осторожный выход:
-             * HP достаточно высокий, крови нет, давления нет.
+             * Осторожный выход.
+             * Было 0.82 — слишком рано.
              */
-            if (hp >= 0.82f && !bleeding && !pressure)
+            if (hp >= 0.88f)
                 return true;
 
             /*
-             * Если остались только дальние melee/animal без реального давления,
-             * не держим recovery бесконечно.
+             * Если остались только melee/animals и они реально далеко,
+             * можно выйти чуть раньше, но не на 0.78.
              */
-            if (hp >= 0.78f && !bleeding && !pressure && HasOnlyMeleeOrAnimalEnemies(snap))
+            if (hp >= 0.86f && HasOnlyMeleeOrAnimalEnemies(snap))
                 return true;
 
             /*
              * Plateau после ампутации/перманентного cap-а.
-             * Но выходить можно только если:
-             * - нет опасного кровотечения;
-             * - нет давления.
+             * Только без крови и давления.
              */
-            if (!bleeding && !pressure && IsRecoveryPlateauLikely())
+            if (IsRecoveryPlateauLikely())
                 return true;
 
             return false;
@@ -2755,7 +2759,7 @@ namespace SignalInterceptor.AI.Psycaster
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
 
-            if (hp < 0.55f)
+            if (hp < 0.60f)
                 return false;
 
             HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
@@ -2763,28 +2767,26 @@ namespace SignalInterceptor.AI.Psycaster
             int ticksSinceDamage = restore != null ? restore.TicksSinceDamage : -1;
 
             /*
-             * Если реген доступен и очень давно не было урона,
-             * но HP всё ещё не выше 0.82, скорее всего это не временная рана,
-             * а потерянная конечность / permanent cap.
+             * Было 1800 и hp >= 0.55.
+             * Это могло выпускать его слишком рано.
              */
             if (restore != null &&
                 restore.CanRegenerateNow &&
-                ticksSinceDamage >= 1800 &&
-                hp >= 0.55f)
+                ticksSinceDamage >= 3600 &&
+                hp >= 0.60f)
             {
                 return true;
             }
 
             /*
-             * Дополнительный safety:
-             * если recovery длится уже очень долго и HP хотя бы не критический,
-             * не держим AI в вечном бегстве.
+             * Долгий recovery fallback.
+             * Было 2400 / hp 0.55 — тоже рановато.
              */
             if (recoveryStartedTick > 0)
             {
                 int recoveryDuration = Find.TickManager.TicksGame - recoveryStartedTick;
 
-                if (recoveryDuration >= 2400 && hp >= 0.55f)
+                if (recoveryDuration >= 4200 && hp >= 0.60f)
                     return true;
             }
 
@@ -2842,6 +2844,8 @@ namespace SignalInterceptor.AI.Psycaster
                 pendingMeleeTargetThingId = -1;
                 pendingMeleeUntilTick = -1;
                 pendingMeleeReason = null;
+                pendingMeleeLastLogTargetThingId = -1;
+                pendingMeleeLastDistanceZone = null;
                 return false;
             }
 
@@ -2879,6 +2883,8 @@ namespace SignalInterceptor.AI.Psycaster
                 pendingMeleeTargetThingId = -1;
                 pendingMeleeUntilTick = -1;
                 pendingMeleeReason = null;
+                pendingMeleeLastLogTargetThingId = -1;
+                pendingMeleeLastDistanceZone = null;
                 return false;
             }
 
@@ -2897,9 +2903,6 @@ namespace SignalInterceptor.AI.Psycaster
             bool fallback1v1 = pendingMeleeReason == "Fallback1v1";
             bool targetIsRanged = targetAssessment != null && targetAssessment.IsRanged;
 
-            // ВАЖНО:
-            // Fallback1v1 больше не имеет права держать long melee-pursuit с 20-30 клеток.
-            // Иначе он блокирует action selection, и AI не выбирает Skip/Beckon/Pulse.
             if (fallback1v1 &&
                 singleEnemy &&
                 targetIsRanged &&
@@ -2909,6 +2912,8 @@ namespace SignalInterceptor.AI.Psycaster
                 pendingMeleeTargetThingId = -1;
                 pendingMeleeUntilTick = -1;
                 pendingMeleeReason = null;
+                pendingMeleeLastLogTargetThingId = -1;
+                pendingMeleeLastDistanceZone = null;
 
                 nextActionSelectTick = now;
 
@@ -2919,8 +2924,6 @@ namespace SignalInterceptor.AI.Psycaster
                 return false;
             }
 
-            // Если цель была в melee-contract и резко сбежала, не продолжаем тупо бежать пешком.
-            // Отдаём управление action selection, чтобы сработал Skip/Beckon/Blind/Vertigo.
             if (IsAntiKiteEscapeTarget(target) && d > 6f)
             {
                 nextActionSelectTick = now;
@@ -2941,16 +2944,42 @@ namespace SignalInterceptor.AI.Psycaster
             {
                 nextActionSelectTick = now + 30;
 
-                Log.Message("[Signal Interceptor] Psycaster pending-melee: "
-                            + target.LabelShort
-                            + " | reason=" + (pendingMeleeReason ?? "unknown")
-                            + " | d=" + d.ToString("F1"));
+                string distanceZone;
+
+                if (d <= 1.8f)
+                    distanceZone = "contact";
+                else if (d <= 4f)
+                    distanceZone = "close";
+                else if (d <= 8f)
+                    distanceZone = "medium";
+                else if (d <= 14f)
+                    distanceZone = "far";
+                else
+                    distanceZone = "veryFar";
+
+                bool shouldLog =
+                    pendingMeleeLastLogTargetThingId != target.thingIDNumber ||
+                    pendingMeleeLastDistanceZone != distanceZone;
+
+                if (shouldLog)
+                {
+                    pendingMeleeLastLogTargetThingId = target.thingIDNumber;
+                    pendingMeleeLastDistanceZone = distanceZone;
+
+                    Log.Message("[Signal Interceptor] Psycaster pending-melee: "
+                                + target.LabelShort
+                                + " | reason=" + (pendingMeleeReason ?? "unknown")
+                                + " | zone=" + distanceZone
+                                + " | d=" + d.ToString("F1"));
+                }
 
                 if (d <= 1.8f)
                 {
                     pendingMeleeTargetThingId = -1;
                     pendingMeleeUntilTick = -1;
                     pendingMeleeReason = null;
+                    pendingMeleeLastLogTargetThingId = -1;
+                    pendingMeleeLastDistanceZone = null;
                 }
 
                 return true;
@@ -2967,6 +2996,8 @@ namespace SignalInterceptor.AI.Psycaster
             pendingMeleeTargetThingId = target.thingIDNumber;
             pendingMeleeUntilTick = Find.TickManager.TicksGame + Mathf.Max(60, durationTicks);
             pendingMeleeReason = reason;
+            pendingMeleeLastLogTargetThingId = -1;
+            pendingMeleeLastDistanceZone = null;
 
             StartKillContract(target, Mathf.Max(durationTicks, 420), reason);
         }
@@ -3161,19 +3192,55 @@ namespace SignalInterceptor.AI.Psycaster
                 return;
 
             int now = Find.TickManager.TicksGame;
+            int newUntilTick = now + Mathf.Max(180, durationTicks);
+            float distance = caster.Position.DistanceTo(target.Position);
+
+            if (killContractTargetThingId == target.thingIDNumber &&
+                killContractUntilTick > now)
+            {
+                bool reasonChanged = killContractReason != reason;
+                bool extended = newUntilTick > killContractUntilTick;
+
+                if (extended)
+                    killContractUntilTick = newUntilTick;
+
+                if (reasonChanged)
+                    killContractReason = reason;
+
+                killContractLastDistance = distance;
+
+                if (distance <= 3.5f)
+                    killContractLastCloseTick = now;
+
+                if (Prefs.DevMode && (reasonChanged || extended))
+                {
+                    Log.Message("[Signal Interceptor] Psycaster kill-contract refresh: "
+                                + target.LabelShort
+                                + " | reason=" + (reason ?? "unknown")
+                                + " | d=" + distance.ToString("F1")
+                                + " | until=" + killContractUntilTick
+                                + " | extended=" + extended
+                                + " | reasonChanged=" + reasonChanged);
+                }
+
+                return;
+            }
 
             killContractTargetThingId = target.thingIDNumber;
-            killContractUntilTick = now + Mathf.Max(180, durationTicks);
+            killContractUntilTick = newUntilTick;
             killContractReason = reason;
-            killContractLastDistance = caster.Position.DistanceTo(target.Position);
+            killContractLastDistance = distance;
+            killContractEscapeUntilTick = -1;
 
-            if (killContractLastDistance <= 3.5f)
+            if (distance <= 3.5f)
                 killContractLastCloseTick = now;
+            else
+                killContractLastCloseTick = -1;
 
             Log.Message("[Signal Interceptor] Psycaster kill-contract start: "
                         + target.LabelShort
                         + " | reason=" + (reason ?? "unknown")
-                        + " | d=" + killContractLastDistance.ToString("F1")
+                        + " | d=" + distance.ToString("F1")
                         + " | until=" + killContractUntilTick);
         }
 

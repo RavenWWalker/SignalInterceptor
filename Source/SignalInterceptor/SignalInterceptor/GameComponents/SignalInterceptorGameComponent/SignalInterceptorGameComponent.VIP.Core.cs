@@ -263,13 +263,22 @@ namespace SignalInterceptor
                     continue;
                 }
 
-                if (!data.rewardGiven && data.expireTick > 0 && Find.TickManager.TicksGame >= data.expireTick)
+                if (data.rewardGiven)
+                {
+                    trackedVIPSites.RemoveAt(i);
+                    continue;
+                }
+
+                if (data.expireTick > 0 && Find.TickManager.TicksGame >= data.expireTick)
                 {
                     if (data.site != null && data.site.HasMap)
                     {
                         data.expireTick = -1;
 
-                        Log.Message("[Signal Interceptor] VIP site timer expired, but map is active. Timeout disabled. Subtype=" + data.subtype);
+                        Log.Message("[Signal Interceptor] VIP site timer expired, but map is active. Timeout disabled. Subtype=" +
+                                    data.subtype +
+                                    " | Site=" +
+                                    (data.site?.LabelCap.ToString() ?? "null"));
 
                         continue;
                     }
@@ -281,53 +290,29 @@ namespace SignalInterceptor
                         Find.WorldObjects.Remove(data.site);
                     }
 
-                    if (data.subtype == VIPSubtype.DoppelgangerVIP)
-                    {
-                        DeactivateDoppelgangerFaction(data.enemyFaction);
-                        data.enemyFaction = null;
-                    }
-
-                    if (data.subtype == VIPSubtype.MechanitorSignalVIP)
-                    {
-                        DeactivateRogueMechanitorFaction(data.enemyFaction);
-                        data.enemyFaction = null;
-                    }
-
                     trackedVIPSites.RemoveAt(i);
                     continue;
                 }
 
                 if (data.site == null || !data.site.Spawned)
                 {
+                    /*
+                     * Старые сейвы/старые квесты могли потерять world object через quest.WorldObjectTimeout.
+                     * Если это PsycasterVIP и пешка ещё существует — даём логике VIP обработать её,
+                     * вместо мгновенного фейла по отсутствующему site.
+                     */
                     if (data.subtype == VIPSubtype.PsycasterVIP)
                     {
                         if (data.psycasterPawn != null
                             && !data.psycasterPawn.Destroyed
-                            && !data.psycasterPawn.Dead
-                            && !data.rewardGiven)
+                            && !data.psycasterPawn.Dead)
                         {
                             TickPsycasterVIP(data);
                             continue;
                         }
                     }
 
-                    if (!data.rewardGiven)
-                    {
-                        FailVIPQuest(data, "SI_VIP_FailedExpiredText");
-                    }
-
-                    if (data.subtype == VIPSubtype.DoppelgangerVIP)
-                    {
-                        DeactivateDoppelgangerFaction(data.enemyFaction);
-                        data.enemyFaction = null;
-                    }
-
-                    if (data.subtype == VIPSubtype.MechanitorSignalVIP)
-                    {
-                        DeactivateRogueMechanitorFaction(data.enemyFaction);
-                        data.enemyFaction = null;
-                    }
-
+                    FailVIPQuest(data, "SI_VIP_FailedExpiredText");
                     trackedVIPSites.RemoveAt(i);
                     continue;
                 }
@@ -345,10 +330,9 @@ namespace SignalInterceptor
 
                 if (data.subtype == VIPSubtype.MechanitorSignalVIP
                     && data.vipSpawned
-                    && data.enemyFaction != null
                     && data.site != null
                     && !data.site.HasMap
-                    && !data.rewardGiven)
+                    && data.enemyFaction != null)
                 {
                     FailVIPQuest(data, "SI_MechanitorSignal_FailedFledText");
 
@@ -356,6 +340,9 @@ namespace SignalInterceptor
                     data.enemyFaction = null;
 
                     Log.Message("[Signal Interceptor] Mechanitor signal map left. Quest failed.");
+
+                    trackedVIPSites.RemoveAt(i);
+                    continue;
                 }
 
                 if (!data.vipSpawned && data.site.HasMap)
@@ -376,13 +363,18 @@ namespace SignalInterceptor
 
                 if (data.subtype == VIPSubtype.PsycasterVIP
                     && data.vipSpawned
-                    && !data.rewardGiven
                     && Find.TickManager.TicksGame % 15 == 0)
                 {
                     TickPsycasterVIP(data);
                 }
 
-                if (data.vipSpawned && !data.rewardGiven && data.site.HasMap)
+                if (data.rewardGiven)
+                {
+                    trackedVIPSites.RemoveAt(i);
+                    continue;
+                }
+
+                if (data.vipSpawned && data.site.HasMap)
                 {
                     Map siteMap = data.site.Map;
 
@@ -391,6 +383,7 @@ namespace SignalInterceptor
                         if (data.psycasterPawn == null || data.psycasterPawn.Destroyed || data.psycasterPawn.Dead)
                         {
                             FailVIPQuest(data, "SI_VIP_FailedText");
+                            trackedVIPSites.RemoveAt(i);
                             continue;
                         }
 
@@ -406,6 +399,8 @@ namespace SignalInterceptor
                     if (!enemiesAlive)
                     {
                         CompleteVIPQuest(data);
+                        trackedVIPSites.RemoveAt(i);
+                        continue;
                     }
                 }
             }
