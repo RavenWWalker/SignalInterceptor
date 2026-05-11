@@ -214,4 +214,6 @@
   <SI_PsycasterVIP_Title>Псионик обнаружен</SI_PsycasterVIP_Title>
   <SI_PsycasterVIP_Text>Источник псионического сигнала найден. В центре аномалии находится {0}, псионик-одиночка из фракции «{1}». Прочитав ваши мысли ещё на подходе, он уже воспринимает вашу группу как угрозу.</SI_PsycasterVIP_Text>
 
+  <SI_PsycasterTreeShieldBlocked>Пси-воздействие рассеивается резонансом дерева души.</SI_PsycasterTreeShieldBlocked>
+
 </LanguageData>

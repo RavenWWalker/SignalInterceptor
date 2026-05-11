@@ -204,7 +204,7 @@ namespace SignalInterceptor
                 return;
             }
 
-            List<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
+            IReadOnlyList<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
 
             for (int i = 0; i < pawns.Count; i++)
             {
@@ -254,7 +254,7 @@ namespace SignalInterceptor
             if (resonanceDef == null && shieldDef == null)
                 return;
 
-            List<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
+            IReadOnlyList<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
 
             for (int i = 0; i < pawns.Count; i++)
             {
@@ -285,7 +285,7 @@ namespace SignalInterceptor
                 if (map == null)
                     continue;
 
-                List<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
+                IReadOnlyList<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
 
                 for (int i = 0; i < pawns.Count; i++)
                 {

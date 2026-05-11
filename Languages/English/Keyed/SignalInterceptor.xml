@@ -214,4 +214,6 @@
   <SI_PsycasterVIP_Title>Psycaster detected</SI_PsycasterVIP_Title>
   <SI_PsycasterVIP_Text>The source of the psionic signal has been found. At the center of the anomaly stands {0}, a lone psycaster of the temporary faction "{1}". Having read your thoughts before you even gets there, the psycaster already perceives your group as a threat.</SI_PsycasterVIP_Text>
 
+  <SI_PsycasterTreeShieldBlocked>The psycast is dispersed by the anima tree resonance.</SI_PsycasterTreeShieldBlocked>
+
 </LanguageData>

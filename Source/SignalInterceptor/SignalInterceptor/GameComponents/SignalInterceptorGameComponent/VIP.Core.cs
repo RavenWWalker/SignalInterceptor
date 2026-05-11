@@ -413,20 +413,29 @@ namespace SignalInterceptor
 
             Pawn psycaster = data.psycasterPawn;
 
+            TickPsycasterSiteResonance(data);
+
             if (psycaster == null || psycaster.Destroyed)
             {
+                RemovePsycasterResonanceFromAllMaps(psycaster);
+                EndPsycasterResonanceConditionFromAllMaps();
                 FailVIPQuest(data, "SI_VIP_FailedText");
                 return;
             }
 
             if (psycaster.Dead)
             {
+                RemovePsycasterResonanceFromAllMaps(psycaster);
+                EndPsycasterResonanceConditionFromAllMaps();
                 FailVIPQuest(data, "SI_VIP_FailedText");
                 return;
             }
 
             if (IsPsycasterDeliveredToPlayerSettlement(psycaster))
             {
+                RemovePsycasterResonanceFromAllMaps(psycaster);
+                EndPsycasterResonanceConditionFromAllMaps();
+
                 data.psycasterDelivered = true;
                 CompleteVIPQuest(data);
                 return;
@@ -434,6 +443,9 @@ namespace SignalInterceptor
 
             if (!psycaster.Spawned)
             {
+                RemovePsycasterResonanceFromAllMaps(psycaster);
+                EndPsycasterResonanceConditionFromAllMaps();
+
                 if (!psycaster.IsPrisonerOfColony)
                 {
                     FailVIPQuest(data, "SI_VIP_FailedText");
@@ -445,6 +457,11 @@ namespace SignalInterceptor
             if (psycaster.Spawned && psycaster.Map != null && psycaster.Map == data.site?.Map)
             {
                 TickPsycasterCombatAI(data, psycaster);
+            }
+            else
+            {
+                RemovePsycasterResonanceFromAllMaps(psycaster);
+                EndPsycasterResonanceConditionFromAllMaps();
             }
         }
 
