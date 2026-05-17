@@ -454,12 +454,6 @@ namespace SignalInterceptor
                 return;
             }
 
-            /*
-             * Если пешка не заспавнена:
-             * - в караване игрока / шаттле / дропподе с пешками игрока => успех выше;
-             * - пленник колонии, но ещё просто несётся/лежит в контейнере => ждём;
-             * - не пленник колонии => считаем побегом.
-             */
             if (!psycaster.Spawned)
             {
                 if (psycaster.IsPrisonerOfColony)
@@ -473,11 +467,6 @@ namespace SignalInterceptor
 
             Map siteMap = data.site?.Map;
 
-            /*
-             * Если псионик заспавнен уже не на карте сайта:
-             * - в поселении игрока и пленник => успех;
-             * - иначе это побег/нештатное перемещение.
-             */
             if (siteMap == null || psycaster.Map != siteMap)
             {
                 if (IsPsycasterDeliveredToPlayerSettlement(psycaster))
@@ -491,6 +480,7 @@ namespace SignalInterceptor
                 return;
             }
 
+            TickPsycasterSiteResonance(data);
             TickPsycasterCombatAI(data, psycaster);
         }
 

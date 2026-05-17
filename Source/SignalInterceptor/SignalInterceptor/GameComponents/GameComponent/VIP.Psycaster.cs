@@ -739,11 +739,6 @@ namespace SignalInterceptor
                 abilityNames.AddRange(new[]
                 {
             "BlindingPulse",
-
-            /*
-             * Waterskip нужен как аварийное тушение самого пси-кастера.
-             * Vanilla defName: Waterskip.
-             */
             "Waterskip"
         });
             }
@@ -764,7 +759,8 @@ namespace SignalInterceptor
                 {
             "Smokepop",
             "Skip",
-            "Focus"
+            "Focus",
+            "Skipshield"
         });
             }
 

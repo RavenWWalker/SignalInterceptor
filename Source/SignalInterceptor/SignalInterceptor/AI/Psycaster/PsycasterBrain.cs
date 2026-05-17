@@ -256,6 +256,9 @@ namespace SignalInterceptor.AI.Psycaster
             if (IsCasterFreeToAct() && TryRunSingleEnemyDuelResolution(snap))
                 return;
 
+            if (IsCasterFreeToAct() && TryRunWeakPsycasterForcedAssault(snap))
+                return;
+
             if (TryRunPendingMelee(snap))
                 return;
 
@@ -326,6 +329,233 @@ namespace SignalInterceptor.AI.Psycaster
         // ============================================================
         // Выбор действия (action-select)
         // ============================================================
+
+        private bool TryRunWeakPsycasterForcedAssault(BattlefieldSnapshot snap)
+        {
+            if (snap == null || caster == null || caster.Destroyed || caster.Dead || caster.Downed || !caster.Spawned)
+                return false;
+
+            if (caster.Map == null || snap.enemies == null || !snap.HasEnemies)
+                return false;
+
+            if (!IsCasterFreeToAct())
+                return false;
+
+            int now = Find.TickManager.TicksGame;
+
+            if (HasActiveKillContract)
+                return false;
+
+            if (pendingMeleeTargetThingId >= 0 && pendingMeleeUntilTick > now)
+                return false;
+
+            int psylink = GetCasterPsylinkLevelSafe();
+
+            if (psylink <= 0 || psylink >= 5)
+                return false;
+
+            float hp = caster.health != null && caster.health.summaryHealth != null
+                ? caster.health.summaryHealth.SummaryHealthPercent
+                : 1f;
+
+            if (hp < 0.72f)
+                return false;
+
+            if (HasDangerousBleeding())
+                return false;
+
+            if (recoveryMode)
+                return false;
+
+            if (now < graceUntilTick + 900)
+                return false;
+
+            int standingEnemies = 0;
+            int rangedEnemies = 0;
+            int meleeLikeEnemies = 0;
+            int closeMeleeLikeEnemies = 0;
+
+            EnemyAssessment best = null;
+            float bestScore = float.MinValue;
+
+            Map map = caster.Map;
+
+            for (int i = 0; i < snap.enemies.Count; i++)
+            {
+                EnemyAssessment e = snap.enemies[i];
+
+                if (e == null || e.pawn == null)
+                    continue;
+
+                Pawn p = e.pawn;
+
+                if (p.Destroyed || p.Dead || p.Downed || !p.Spawned || p.Map != map)
+                    continue;
+
+                standingEnemies++;
+
+                if (e.IsRanged)
+                    rangedEnemies++;
+
+                bool meleeLike =
+                    e.IsMelee ||
+                    e.IsAnimal ||
+                    e.role == EnemyRole.Wimp;
+
+                if (meleeLike)
+                {
+                    meleeLikeEnemies++;
+
+                    if (e.distanceToCaster <= 10f)
+                        closeMeleeLikeEnemies++;
+                }
+
+                if (e.distanceToCaster > 24f)
+                    continue;
+
+                if (!caster.CanReach(p, PathEndMode.Touch, Danger.Deadly))
+                    continue;
+
+                float score = 0f;
+
+                score += 80f;
+                score -= e.distanceToCaster * 2.0f;
+                score += (1f - e.hpFraction) * 45f;
+
+                if (e.isStunned)
+                    score += 35f;
+
+                if (e.isMindControlled)
+                    score += 20f;
+
+                if (e.IsRanged)
+                    score += 20f;
+
+                if (e.role == EnemyRole.Sniper)
+                    score += 25f;
+
+                if (e.role == EnemyRole.Heavy)
+                    score += 20f;
+
+                if (e.role == EnemyRole.Wimp)
+                    score += 25f;
+
+                if (e.IsAnimal)
+                    score -= 15f;
+
+                if (e.IsMelee)
+                    score -= 10f;
+
+                if (e.alliesInClusterRadius >= 3)
+                    score -= 25f;
+
+                if (closeMeleeLikeEnemies >= 2)
+                    score -= 30f;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = e;
+                }
+            }
+
+            if (standingEnemies < 2)
+                return false;
+
+            if (standingEnemies > 7)
+                return false;
+
+            if (best == null || best.pawn == null)
+                return false;
+
+            if (bestScore < 45f)
+                return false;
+
+            if (closeMeleeLikeEnemies >= 2 && hp < 0.88f)
+                return false;
+
+            Job curJob = caster.CurJob;
+
+            if (curJob != null &&
+                curJob.def == JobDefOf.AttackMelee &&
+                curJob.targetA.HasThing &&
+                curJob.targetA.Thing == best.pawn)
+            {
+                return true;
+            }
+
+            Job meleeJob = JobMaker.MakeJob(JobDefOf.AttackMelee, best.pawn);
+            meleeJob.locomotionUrgency = LocomotionUrgency.Sprint;
+            meleeJob.expiryInterval = 360;
+            meleeJob.checkOverrideOnExpire = true;
+            meleeJob.maxNumMeleeAttacks = 1;
+
+            caster.jobs.StartJob(
+                meleeJob,
+                JobCondition.InterruptForced,
+                null,
+                resumeCurJobAfterwards: false,
+                cancelBusyStances: true
+            );
+
+            StartKillContract(best.pawn, 600, "WeakPsycasterForcedAssault");
+
+            pendingMeleeTargetThingId = best.pawn.thingIDNumber;
+            pendingMeleeUntilTick = now + 420;
+            pendingMeleeReason = "WeakPsycasterForcedAssault";
+
+            nextActionSelectTick = now + 120;
+            nextStanceReevalTick = now + 120;
+
+            Log.Message("[Signal Interceptor] Psycaster weak-tier forced assault: "
+                        + best.pawn.LabelShort
+                        + " | d=" + best.distanceToCaster.ToString("F1")
+                        + " | hp=" + hp.ToString("F2")
+                        + " | psylink=" + psylink
+                        + " | enemies=" + standingEnemies
+                        + " | ranged=" + rangedEnemies
+                        + " | meleeLike=" + meleeLikeEnemies
+                        + " | closeMeleeLike=" + closeMeleeLikeEnemies
+                        + " | score=" + bestScore.ToString("F1"));
+
+            return true;
+        }
+
+        private int GetCasterPsylinkLevelSafe()
+        {
+            if (caster == null || caster.health == null || caster.health.hediffSet == null)
+                return 0;
+
+            HediffDef psylinkDef = DefDatabase<HediffDef>.GetNamedSilentFail("PsychicAmplifier");
+
+            if (psylinkDef == null)
+                return 0;
+
+            Hediff hediff = caster.health.hediffSet.GetFirstHediffOfDef(psylinkDef);
+
+            if (hediff == null)
+                return 0;
+
+            int level = Mathf.RoundToInt(hediff.Severity);
+
+            if (level < 0)
+                level = 0;
+
+            if (level > 6)
+                level = 6;
+
+            return level;
+        }
+
+        private bool WasRecentlyDamaged(int ticks = 180)
+        {
+            HediffComp_PsycasterRestoringMechanisms restore = GetRestoringMechanisms();
+
+            if (restore == null)
+                return false;
+
+            return restore.TicksSinceDamage >= 0 && restore.TicksSinceDamage <= ticks;
+        }
 
         private bool TryRunPreEngageInvisibility(BattlefieldSnapshot snap)
         {
@@ -2519,6 +2749,17 @@ namespace SignalInterceptor.AI.Psycaster
                 return false;
 
             float hp = caster.health.summaryHealth.SummaryHealthPercent;
+
+
+            int psylink = GetCasterPsylinkLevelSafe();
+
+            float recentDamageRecoveryHp =
+                psylink <= 4 ? 0.68f :
+                psylink == 5 ? 0.58f :
+                0.50f;
+
+            if (WasRecentlyDamaged(240) && hp <= recentDamageRecoveryHp)
+                return true;
 
             /*
              * Жёсткий критический порог.
