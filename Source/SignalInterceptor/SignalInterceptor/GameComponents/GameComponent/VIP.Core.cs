@@ -454,8 +454,32 @@ namespace SignalInterceptor
                 return;
             }
 
+            /*
+             * ВАЖНО:
+             * Когда колонист несёт поваленного псионика, сам псионик обычно !Spawned.
+             * Это не побег и не уничтожение. Нужно ждать, пока его донесут до шаттла/каравана/поселения.
+             */
             if (!psycaster.Spawned)
             {
+                if (IsPsycasterCarriedByPlayerPawn(psycaster))
+                {
+                    return;
+                }
+
+                if (IsPsycasterInTransportWithPlayerPawn(psycaster))
+                {
+                    data.psycasterDelivered = true;
+                    CompleteVIPQuest(data);
+                    return;
+                }
+
+                if (IsPsycasterInPlayerCaravan(psycaster))
+                {
+                    data.psycasterDelivered = true;
+                    CompleteVIPQuest(data);
+                    return;
+                }
+
                 if (psycaster.IsPrisonerOfColony)
                 {
                     return;
@@ -467,6 +491,11 @@ namespace SignalInterceptor
 
             Map siteMap = data.site?.Map;
 
+            /*
+             * Если псионик заспавнен уже не на карте сайта:
+             * - в поселении игрока и пленник => успех;
+             * - иначе это побег/нештатное перемещение.
+             */
             if (siteMap == null || psycaster.Map != siteMap)
             {
                 if (IsPsycasterDeliveredToPlayerSettlement(psycaster))
@@ -484,14 +513,48 @@ namespace SignalInterceptor
             TickPsycasterCombatAI(data, psycaster);
         }
 
+        private bool IsPsycasterCarriedByPlayerPawn(Pawn psycaster)
+        {
+            if (psycaster == null || psycaster.Destroyed || psycaster.Dead)
+                return false;
+
+            List<Map> maps = Find.Maps;
+
+            for (int m = 0; m < maps.Count; m++)
+            {
+                Map map = maps[m];
+
+                if (map == null)
+                    continue;
+
+                IReadOnlyList<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
+
+                for (int i = 0; i < pawns.Count; i++)
+                {
+                    Pawn carrier = pawns[i];
+
+                    if (carrier == null || carrier.Destroyed || carrier.Dead || !carrier.Spawned)
+                        continue;
+
+                    if (!IsPlayerExtractionPawn(carrier))
+                        continue;
+
+                    if (carrier.carryTracker == null)
+                        continue;
+
+                    Thing carriedThing = carrier.carryTracker.CarriedThing;
+
+                    if (carriedThing == psycaster)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private bool IsPsycasterExtractedByPlayer(Pawn psycaster)
         {
             if (psycaster == null || psycaster.Dead || psycaster.Destroyed)
-            {
-                return false;
-            }
-
-            if (!psycaster.IsPrisonerOfColony)
             {
                 return false;
             }
