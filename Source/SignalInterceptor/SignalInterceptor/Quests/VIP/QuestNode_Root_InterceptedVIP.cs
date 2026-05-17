@@ -475,19 +475,6 @@ namespace SignalInterceptor
             return true;
         }
 
-        private VIPSubtype ChooseSubtype(Faction faction, Map map)
-        {
-            List<VIPSubtype> available = GetAvailableVIPSubtypes(faction, map);
-
-            if (available.Count == 0)
-            {
-                Log.Warning("[Signal Interceptor] ChooseSubtype called with no available VIP subtypes. Falling back to ShuttleVIP.");
-                return VIPSubtype.ShuttleVIP;
-            }
-
-            return available.RandomElement();
-        }
-
         private List<VIPSubtype> GetAvailableVIPSubtypes(Faction faction, Map map)
         {
             List<VIPSubtype> available = new List<VIPSubtype>();
@@ -1180,23 +1167,6 @@ namespace SignalInterceptor
             return null;
         }
 
-        private bool IsPreferredMechanitorBiome(PlanetTile tile)
-        {
-            BiomeDef biome = GetTileBiome(tile);
-
-            if (biome == null || biome.defName == null)
-                return false;
-
-            string defName = biome.defName.ToLowerInvariant();
-
-            return defName.Contains("desert")
-                || defName.Contains("tundra")
-                || defName.Contains("ice")
-                || defName.Contains("wasteland")
-                || defName.Contains("polluted")
-                || defName.Contains("boreal");
-        }
-
         private bool TileHasRoad(PlanetTile tile)
         {
             try
@@ -1279,37 +1249,6 @@ namespace SignalInterceptor
             }
 
             return best;
-        }
-
-        private float GetTilePollution(PlanetTile tile)
-        {
-            try
-            {
-                object worldTile = Find.WorldGrid[tile];
-                System.Type type = worldTile.GetType();
-
-                System.Reflection.PropertyInfo property = type.GetProperty("pollution") ?? type.GetProperty("Pollution");
-                if (property != null)
-                {
-                    object value = property.GetValue(worldTile, null);
-                    if (value is float f)
-                        return f;
-                }
-
-                System.Reflection.FieldInfo field = type.GetField("pollution") ?? type.GetField("Pollution");
-                if (field != null)
-                {
-                    object value = field.GetValue(worldTile);
-                    if (value is float f)
-                        return f;
-                }
-            }
-            catch
-            {
-                return 0f;
-            }
-
-            return 0f;
         }
 
         private string GenerateShuttleQuestName()
@@ -1617,30 +1556,6 @@ namespace SignalInterceptor
 
                 default:
                     return "Intercepted VIP";
-            }
-        }
-
-        private string GetSiteLabel(VIPSubtype subtype)
-        {
-            switch (subtype)
-            {
-                case VIPSubtype.ShuttleVIP:
-                    return "SI_VIP_Site_Shuttle".Translate();
-
-                case VIPSubtype.PsycasterVIP:
-                    return "SI_VIP_Site_Psycaster".Translate();
-
-                case VIPSubtype.MechanitorSignalVIP:
-                    return "SI_VIP_Site_MechanitorSignal".Translate();
-
-                case VIPSubtype.PilgrimVIP:
-                    return "SI_VIP_Site_Pilgrim".Translate();
-
-                case VIPSubtype.DoppelgangerVIP:
-                    return "SI_VIP_Site_Doppelganger".Translate();
-
-                default:
-                    return "VIP Location";
             }
         }
 

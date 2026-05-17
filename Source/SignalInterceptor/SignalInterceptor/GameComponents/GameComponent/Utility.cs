@@ -41,21 +41,6 @@ namespace SignalInterceptor
                 || defName.IndexOf("GotoMapEdge", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private bool IsFleeOrExitDuty(PawnDuty duty)
-        {
-            if (duty == null || duty.def == null || duty.def.defName == null)
-            {
-                return false;
-            }
-
-            string defName = duty.def.defName;
-
-            return defName.IndexOf("Flee", StringComparison.OrdinalIgnoreCase) >= 0
-                || defName.IndexOf("Exit", StringComparison.OrdinalIgnoreCase) >= 0
-                || defName.IndexOf("Leave", StringComparison.OrdinalIgnoreCase) >= 0
-                || defName.IndexOf("Travel", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
         private bool AddHediffToPawnByDefNames(Pawn pawn, params string[] defNames)
         {
             if (pawn == null || defNames == null || defNames.Length == 0)
@@ -192,74 +177,6 @@ namespace SignalInterceptor
             }
 
             return fallback;
-        }
-
-        private bool AddOrSetLevelHediffToPawn(Pawn pawn, string defName, int level)
-        {
-            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
-            {
-                return false;
-            }
-
-            if (defName.NullOrEmpty() || level <= 0)
-            {
-                return false;
-            }
-
-            HediffDef hediffDef = DefDatabase<HediffDef>.GetNamedSilentFail(defName);
-            if (hediffDef == null)
-            {
-                Log.Warning("[Signal Interceptor] Mechanitor implant HediffDef not found: " + defName);
-                return false;
-            }
-
-            Hediff existing = pawn.health.hediffSet.GetFirstHediffOfDef(hediffDef);
-
-            float targetSeverity = level;
-
-            if (hediffDef.maxSeverity > 0f)
-            {
-                targetSeverity = Mathf.Min(targetSeverity, hediffDef.maxSeverity);
-            }
-
-            if (targetSeverity < hediffDef.minSeverity)
-            {
-                targetSeverity = hediffDef.minSeverity;
-            }
-
-            if (existing != null)
-            {
-                existing.Severity = Mathf.Max(existing.Severity, targetSeverity);
-                return true;
-            }
-
-            BodyPartRecord targetPart = FindBestBodyPartForHediff(pawn, hediffDef);
-
-            try
-            {
-                Hediff hediff = HediffMaker.MakeHediff(hediffDef, pawn, targetPart);
-                pawn.health.AddHediff(hediff, targetPart);
-
-                // ВАЖНО: severity ставим ПОСЛЕ AddHediff, иначе RimWorld может сбросить на initialSeverity = 1.
-                hediff.Severity = targetSeverity;
-
-                Log.Message("[Signal Interceptor] Added mechanitor implant: " +
-                            defName +
-                            " level=" + targetSeverity +
-                            " to " + pawn.LabelShort);
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log.Warning("[Signal Interceptor] Failed to add mechanitor implant " +
-                            defName +
-                            " level=" + targetSeverity +
-                            " to " + pawn.LabelShort +
-                            ": " + ex);
-
-                return false;
-            }
         }
     }
 }

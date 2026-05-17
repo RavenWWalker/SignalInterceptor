@@ -107,11 +107,11 @@
     <Compile Include="GameComponents\GameComponent\VIP.Mechanitor.cs" />
     <Compile Include="GameComponents\GameComponent\VIP.Psycaster.cs" />
     <Compile Include="GameComponents\GameComponent\VIP.Shuttle.cs" />
-    <Compile Include="Headiffs\HediffCompProperties_PsycasterEntropyStabilizer.cs" />
-    <Compile Include="Headiffs\HediffCompProperties_PsycasterRestoringMechanisms.cs" />
-    <Compile Include="Headiffs\HediffComp_PsycasterEntropyStabilizer.cs" />
-    <Compile Include="Headiffs\HediffComp_PsycasterRestoringMechanisms.cs" />
-    <Compile Include="Headiffs\PsycasterRecoveryUtility.cs" />
+    <Compile Include="Hediffs\HediffCompProperties_PsycasterEntropyStabilizer.cs" />
+    <Compile Include="Hediffs\HediffCompProperties_PsycasterRestoringMechanisms.cs" />
+    <Compile Include="Hediffs\HediffComp_PsycasterEntropyStabilizer.cs" />
+    <Compile Include="Hediffs\HediffComp_PsycasterRestoringMechanisms.cs" />
+    <Compile Include="Hediffs\PsycasterRecoveryUtility.cs" />
     <Compile Include="Patches\Patch_DropShuttle_ClampCell.cs" />
     <Compile Include="Patches\Patch_FactionDialog.cs" />
     <Compile Include="Patches\Patch_PsycasterTreeShield.cs" />

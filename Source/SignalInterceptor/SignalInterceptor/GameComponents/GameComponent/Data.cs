@@ -48,39 +48,7 @@ namespace SignalInterceptor
         public bool psycasterNeurostormTriggered;
         public bool psycasterTreeDestroyedLetterSent;
 
-        /// <summary>
-        /// Мозг пси-кастера. Не сериализуется — после загрузки сейва пересоздаётся
-        /// в SignalInterceptorGameComponent при первом вызове TickPsycasterCombatAI.
-        /// </summary>
-        [Unsaved(false)]
         public PsycasterBrain psycasterBrain;
-
-        // ============================================================
-        // ВРЕМЕННЫЕ ПОЛЯ для совместимости со старым AI-кодом.
-        // Старый код в VIP.Psycaster.cs (TryRunPsycasterRangedGroupMode и др.) ещё ссылается
-        // на эти поля. Мы их физически больше не используем — новый AI работает через PsycasterBrain.
-        // Все эти поля помечены [Unsaved] и будут полностью удалены вместе со старым кодом
-        // в финальной пачке cleanup.
-        // ============================================================
-
-        [Unsaved(false)] public int psycasterNextCastTick = -1;
-        [Unsaved(false)] public bool psycasterFocusUsed;
-        [Unsaved(false)] public int psycasterNextDefensiveCastTick = -1;
-        [Unsaved(false)] public int psycasterNextWallraiseTick = -1;
-        [Unsaved(false)] public int psycasterNextSmokepopTick = -1;
-        [Unsaved(false)] public int psycasterMeleeCommitTargetThingId = -1;
-        [Unsaved(false)] public int psycasterMeleeCommitUntilTick = -1;
-        [Unsaved(false)] public int psycasterLastInvisibilityTick = -999999;
-        [Unsaved(false)] public int psycasterComboTargetThingId = -1;
-        [Unsaved(false)] public int psycasterComboStage = 0;
-        [Unsaved(false)] public int psycasterComboExpireTick = -1;
-        [Unsaved(false)] public int psycasterMode = 0;
-        [Unsaved(false)] public int psycasterModeUntilTick = -1;
-        [Unsaved(false)] public int psycasterModeTargetThingId = -1;
-        [Unsaved(false)] public int psycasterNextThinkTick = -1;
-        [Unsaved(false)] public int psycasterLastBlindingPulseTick = -999999;
-        [Unsaved(false)] public int psycasterLastVertigoPulseTick = -999999;
-        [Unsaved(false)] public int psycasterLastBerserkPulseTick = -999999;
 
         public void ExposeData()
         {

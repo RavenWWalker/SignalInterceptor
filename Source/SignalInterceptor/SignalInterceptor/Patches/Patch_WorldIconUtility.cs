@@ -50,19 +50,6 @@ namespace SignalInterceptor
     [HarmonyPatch]
     public static class Patch_SignalInterceptor_ExpandedIconScreenRect
     {
-        private static MethodBase TargetMethod()
-        {
-            return AccessTools.Method(
-                typeof(ExpandableWorldObjectsUtility),
-                "ExpandedIconScreenRect",
-                new Type[]
-                {
-                    typeof(WorldObject),
-                    typeof(float)
-                }
-            );
-        }
-
         public static void Postfix(WorldObject o, float factor, ref Rect __result)
         {
             Patch_WorldIconUtility.IconOverlaySettings settings;

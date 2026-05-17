@@ -368,39 +368,6 @@ namespace SignalInterceptor
             return TryStartFallbackAnimalMentalState(pawn, reason);
         }
 
-        private bool TryDoRandomMentalBreakByReflection(Pawn pawn, string reason)
-        {
-            object mentalBreaker = pawn.mindState.mentalBreaker;
-
-            if (mentalBreaker == null)
-                return false;
-
-            MethodInfo method = mentalBreaker.GetType()
-                .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .Where(m => m.Name == "TryDoRandomMentalBreak")
-                .OrderByDescending(m => m.GetParameters().Length)
-                .FirstOrDefault();
-
-            if (method == null)
-                return false;
-
-            try
-            {
-                object[] args = BuildReflectionArgs(method, reason);
-
-                object result = method.Invoke(mentalBreaker, args);
-
-                if (result is bool boolResult)
-                    return boolResult;
-
-                return pawn.InMentalState;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
         private bool TryStartFallbackHumanlikeMentalState(Pawn pawn, string reason)
         {
             if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed)

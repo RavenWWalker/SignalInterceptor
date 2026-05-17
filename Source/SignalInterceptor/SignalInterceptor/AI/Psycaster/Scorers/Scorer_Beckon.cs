@@ -129,20 +129,5 @@ namespace SignalInterceptor.AI.Psycaster
 
             return action;
         }
-
-        private float AverageEnemyThreat(BattlefieldSnapshot snap)
-        {
-            if (snap.enemies == null || snap.enemies.Count == 0) return 1f;
-            float sum = 0f;
-            int n = 0;
-            for (int i = 0; i < snap.enemies.Count; i++)
-            {
-                EnemyAssessment e = snap.enemies[i];
-                if (e == null || e.pawn == null) continue;
-                sum += e.threatScore;
-                n++;
-            }
-            return n > 0 ? sum / n : 1f;
-        }
     }
 }
