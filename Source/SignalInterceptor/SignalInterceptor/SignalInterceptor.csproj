@@ -78,7 +78,7 @@
     <Compile Include="AI\Psycaster\Scorers\Scorer_MassChaosSkip.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_MeleeAttack.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Skip.cs" />
-    <Compile Include="AI\Psycaster\Scorers\Scorer_Skipshield.cs" />
+    <Compile Include="AI\Psycaster\Scorers\Scorer_BulletShield.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Smokepop.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_Stun.cs" />
     <Compile Include="AI\Psycaster\Scorers\Scorer_VertigoPulse.cs" />

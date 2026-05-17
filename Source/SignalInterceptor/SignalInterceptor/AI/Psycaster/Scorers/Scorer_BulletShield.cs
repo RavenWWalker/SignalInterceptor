@@ -4,27 +4,27 @@ using RimWorld;
 namespace SignalInterceptor.AI.Psycaster
 {
     /// <summary>
-    /// Skipshield.
+    /// BulletShield.
     /// Приоритет:
     /// 1) Мили-кастеры ставят на себя, чтобы безопасно вытягивать противников в ближний бой;
     /// 2) закрыть опасных дальников куполом, чтобы они не стреляли по кастеру;
     /// 3) если HP низкое / кастер под огнём — поставить купол на себя.
     /// </summary>
-    public class Scorer_Skipshield : AbilityScorerBase
+    public class Scorer_BulletShield : AbilityScorerBase
     {
-        public override string AbilityDefName { get { return "Skipshield"; } }
+        public override string AbilityDefName { get { return "BulletShield"; } }
 
         protected override float StanceMultiplier(PsycasterStance stance)
         {
             switch (stance)
             {
-                case PsycasterStance.Opening: return PsycasterTuning.W_Opening_Skipshield;
-                case PsycasterStance.Kite: return PsycasterTuning.W_Kite_Skipshield;
-                case PsycasterStance.Disengage: return PsycasterTuning.W_Disengage_Skipshield;
-                case PsycasterStance.CrowdControl: return PsycasterTuning.W_CrowdControl_Skipshield;
-                case PsycasterStance.Hunt: return PsycasterTuning.W_Hunt_Skipshield;
-                case PsycasterStance.Engulfed: return PsycasterTuning.W_Engulfed_Skipshield;
-                case PsycasterStance.Survive: return PsycasterTuning.W_Survive_Skipshield;
+                case PsycasterStance.Opening: return PsycasterTuning.W_Opening_BulletShield;
+                case PsycasterStance.Kite: return PsycasterTuning.W_Kite_BulletShield;
+                case PsycasterStance.Disengage: return PsycasterTuning.W_Disengage_BulletShield;
+                case PsycasterStance.CrowdControl: return PsycasterTuning.W_CrowdControl_BulletShield;
+                case PsycasterStance.Hunt: return PsycasterTuning.W_Hunt_BulletShield;
+                case PsycasterStance.Engulfed: return PsycasterTuning.W_Engulfed_BulletShield;
+                case PsycasterStance.Survive: return PsycasterTuning.W_Survive_BulletShield;
                 default: return 0f;
             }
         }
@@ -36,7 +36,7 @@ namespace SignalInterceptor.AI.Psycaster
             if (snap == null || snap.caster == null || snap.enemies == null)
                 return ScoredAction.None;
 
-            if (snap.casterHasSkipshield)
+            if (snap.casterHasBulletShield)
                 return ScoredAction.None;
 
             int rangedLos = 0;
@@ -128,7 +128,7 @@ namespace SignalInterceptor.AI.Psycaster
             action.castWarmupTicks = PsycasterTuning.CastWarmupMedium;
             action.score = raw;
             action.debugReason =
-                "Skipshield " + mode +
+                "BulletShield " + mode +
                 " hp=" + snap.casterHpFraction.ToString("F2") +
                 " entropy=" + snap.casterEntropyFraction.ToString("F2") +
                 " rangedLOS=" + rangedLos +

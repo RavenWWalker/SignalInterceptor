@@ -44,8 +44,8 @@ namespace SignalInterceptor.AI.Psycaster
         /// <summary>Сейчас под действием Invisibility.</summary>
         public bool casterIsInvisible;
 
-        /// <summary>Сейчас под действием Skipshield (или аналогичного барьера).</summary>
-        public bool casterHasSkipshield;
+        /// <summary>Сейчас под действием BulletShield (или аналогичного барьера).</summary>
+        public bool casterHasBulletShield;
 
         // ============================================================
         // Враги

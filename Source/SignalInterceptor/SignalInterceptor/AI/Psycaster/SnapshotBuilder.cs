@@ -75,24 +75,24 @@ namespace SignalInterceptor.AI.Psycaster
                 && caster.stances.stunner != null
                 && caster.stances.stunner.Stunned;
 
-            // Invisibility / Skipshield — через хеддиффы.
+            // Invisibility / BulletShield — через хеддиффы.
             HediffDef invisibilityDef = DefDatabase<HediffDef>.GetNamedSilentFail("PsychicInvisibility");
             snap.casterIsInvisible = invisibilityDef != null
                 && caster.health != null
                 && caster.health.hediffSet != null
                 && caster.health.hediffSet.HasHediff(invisibilityDef);
 
-            // Skipshield — это thing на карте, не хеддифф. Проверяем по близости.
-            snap.casterHasSkipshield = HasNearbySkipshield(caster);
+            // BulletShield — это thing на карте, не хеддифф. Проверяем по близости.
+            snap.casterHasBulletShield = HasNearbyBulletShield(caster);
         }
 
-        private static bool HasNearbySkipshield(Pawn caster)
+        private static bool HasNearbyBulletShield(Pawn caster)
         {
             if (caster == null || caster.Map == null)
                 return false;
 
-            // Skipshield создаёт здание / эффект около пешки. Простая эвристика:
-            // ищем Thing с defName, содержащим "Skipshield", в радиусе 6 от каста.
+            // BulletShield создаёт здание / эффект около пешки. Простая эвристика:
+            // ищем Thing с defName, содержащим "BulletShield", в радиусе 6 от каста.
             Map map = caster.Map;
             IntVec3 center = caster.Position;
 
@@ -101,7 +101,7 @@ namespace SignalInterceptor.AI.Psycaster
                 if (t == null || t.def == null || t.def.defName == null)
                     continue;
 
-                if (t.def.defName.IndexOf("Skipshield", System.StringComparison.OrdinalIgnoreCase) < 0)
+                if (t.def.defName.IndexOf("BulletShield", System.StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
 
                 if (t.Position.DistanceTo(center) <= 6f)

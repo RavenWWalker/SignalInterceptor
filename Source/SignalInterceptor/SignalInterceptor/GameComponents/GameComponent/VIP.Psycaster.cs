@@ -730,59 +730,60 @@ namespace SignalInterceptor
             {
                 abilityNames.AddRange(new[]
                 {
-            "Stun"
-        });
+                    "Stun"
+                });
             }
 
             if (psylinkLevel >= 2)
             {
                 abilityNames.AddRange(new[]
                 {
-            "BlindingPulse",
-            "Waterskip"
-        });
+                    "BlindingPulse",
+                    "Waterskip"
+                });
             }
 
             if (psylinkLevel >= 3)
             {
                 abilityNames.AddRange(new[]
                 {
-            "Beckon",
-            "ChaosSkip",
-            "VertigoPulse"
-        });
+                    "Beckon",
+                    "ChaosSkip",
+                    "VertigoPulse"
+                });
             }
 
             if (psylinkLevel >= 4)
             {
                 abilityNames.AddRange(new[]
                 {
-            "Smokepop",
-            "Skip",
-            "Focus",
-            "Skipshield"
-        });
+                    "Smokepop",
+                    "Skip",
+                    "Focus"
+                });
             }
 
             if (psylinkLevel >= 5)
             {
                 abilityNames.AddRange(new[]
                 {
-            "Berserk",
-            "Wallraise"
-        });
+                    "Berserk",
+                    "Wallraise"
+                });
             }
 
             if (psylinkLevel >= 6)
             {
                 abilityNames.AddRange(new[]
                 {
-            "Invisibility",
-            "BerserkPulse",
-            "MassChaosSkip",
-            "ManhunterPulse"
-        });
+                    "Invisibility",
+                    "BerserkPulse",
+                    "MassChaosSkip",
+                    "ManhunterPulse",
+                    "BulletShield"
+                });
             }
+
 
             foreach (string defName in abilityNames.Distinct())
             {
@@ -829,11 +830,32 @@ namespace SignalInterceptor
             if (direct != null)
                 return direct;
 
+            string[] aliases = null;
+
+            if (name == "BulletShield" || name == "BulletShield")
+            {
+                aliases = new[]
+                {
+            "BulletShield"
+        };
+            }
+
+            if (aliases != null)
+            {
+                for (int i = 0; i < aliases.Length; i++)
+                {
+                    AbilityDef aliasDef = DefDatabase<AbilityDef>.GetNamedSilentFail(aliases[i]);
+
+                    if (aliasDef != null)
+                        return aliasDef;
+                }
+            }
+
             return DefDatabase<AbilityDef>.AllDefsListForReading
                 .FirstOrDefault(def =>
-                    def != null
-                    && def.defName != null
-                    && def.defName.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    def != null &&
+                    def.defName != null &&
+                    def.defName.Equals(name, StringComparison.OrdinalIgnoreCase));
         }
 
         private void GivePsycasterVIPGear(Pawn pawn, int tier)

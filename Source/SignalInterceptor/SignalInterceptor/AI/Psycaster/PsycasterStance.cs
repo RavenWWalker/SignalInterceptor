@@ -41,14 +41,14 @@
         /// <summary>
         /// Окружили со всех сторон в ближнем бою (2+ врагов в радиусе 2.2),
         /// но HP ещё нормальный. Приоритет — экстренное разведение через Mass Chaos Skip,
-        /// Skipshield, Wallraise. Не отступление.
+        /// BulletShield, Wallraise. Не отступление.
         /// </summary>
         Engulfed = 5,
 
         /// <summary>
         /// HP ниже критического порога (по умолчанию 35%) ИЛИ пси-кастер беспомощен
         /// (без psyfocus, без cooldown-готовых способностей в окружении).
-        /// Приоритет — выживание любой ценой: Skipshield + Invisibility + Skip-self в дальний угол.
+        /// Приоритет — выживание любой ценой: BulletShield + Invisibility + Skip-self в дальний угол.
         /// </summary>
         Survive = 6
     }

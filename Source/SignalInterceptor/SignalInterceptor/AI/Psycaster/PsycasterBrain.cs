@@ -124,7 +124,7 @@ namespace SignalInterceptor.AI.Psycaster
             scorers.Add(new Scorer_MassChaosSkip());
             scorers.Add(new Scorer_Wallraise());
             scorers.Add(new Scorer_Beckon());
-            scorers.Add(new Scorer_Skipshield());
+            scorers.Add(new Scorer_BulletShield());
             scorers.Add(new Scorer_Invisibility());
             scorers.Add(new Scorer_Smokepop());
 
@@ -1546,7 +1546,7 @@ namespace SignalInterceptor.AI.Psycaster
              * Их не резервируем от самих себя.
              */
             bool defensiveAbility =
-                abilityDefName == "Skipshield" ||
+                abilityDefName == "BulletShield" ||
                 abilityDefName == "Invisibility" ||
                 abilityDefName == "Smokepop" ||
                 abilityDefName == "Wallraise" ||
@@ -2529,7 +2529,7 @@ namespace SignalInterceptor.AI.Psycaster
                 case "ManhunterPulse":
                     return 0.30f;
 
-                case "Skipshield":
+                case "BulletShield":
                     return 0.20f;
 
                 default:
@@ -4226,9 +4226,9 @@ namespace SignalInterceptor.AI.Psycaster
                     min = PsycasterTuning.WallraiseSoftCooldownMin;
                     max = PsycasterTuning.WallraiseSoftCooldownMax;
                     break;
-                case "Skipshield":
-                    min = PsycasterTuning.SkipshieldSoftCooldownMin;
-                    max = PsycasterTuning.SkipshieldSoftCooldownMax;
+                case "BulletShield":
+                    min = PsycasterTuning.BulletShieldSoftCooldownMin;
+                    max = PsycasterTuning.BulletShieldSoftCooldownMax;
                     break;
                 case "ManhunterPulse":
                     min = PsycasterTuning.ManhunterPulseSoftCooldownMin;

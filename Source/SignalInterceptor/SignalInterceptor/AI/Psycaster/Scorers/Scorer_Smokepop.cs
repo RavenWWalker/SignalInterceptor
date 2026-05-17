@@ -154,7 +154,7 @@ namespace SignalInterceptor.AI.Psycaster
             if (healthy && !severeRangedPressure)
                 raw *= 0.45f;
 
-            if (snap.casterHasSkipshield)
+            if (snap.casterHasBulletShield)
                 raw *= 0.35f;
 
             ScoredAction action = new ScoredAction();
@@ -168,7 +168,7 @@ namespace SignalInterceptor.AI.Psycaster
                 " meaningfulDps=" + meaningfulIncomingDps.ToString("F1") +
                 " nearestShooter=" + nearestShooterDist.ToString("F1") +
                 " invisible=" + invisible +
-                " skipshield=" + snap.casterHasSkipshield;
+                " BulletShield=" + snap.casterHasBulletShield;
 
             return action;
         }

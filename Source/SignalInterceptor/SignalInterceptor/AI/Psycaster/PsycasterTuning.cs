@@ -116,8 +116,8 @@
         public const int WallraiseSoftCooldownMin = 1200;
         public const int WallraiseSoftCooldownMax = 1800;
 
-        public const int SkipshieldSoftCooldownMin = 600;
-        public const int SkipshieldSoftCooldownMax = 1200;
+        public const int BulletShieldSoftCooldownMin = 600;
+        public const int BulletShieldSoftCooldownMax = 1200;
 
         public const int ManhunterPulseSoftCooldownMin = 1800;
         public const int ManhunterPulseSoftCooldownMax = 3000;
@@ -147,7 +147,7 @@
         public const float W_Opening_ManhunterPulse = 1.8f;
         public const float W_Opening_Smokepop = 0.0f;
         public const float W_Opening_Wallraise = 0.4f;
-        public const float W_Opening_Skipshield = 0.3f;
+        public const float W_Opening_BulletShield = 0.3f;
         public const float W_Opening_Invisibility = 0.0f;
         public const float W_Opening_Beckon = 0.5f;
 
@@ -164,7 +164,7 @@
         public const float W_Kite_ManhunterPulse = 2.0f;
         public const float W_Kite_Smokepop = 2.4f;
         public const float W_Kite_Wallraise = 0.4f;
-        public const float W_Kite_Skipshield = 1.4f;
+        public const float W_Kite_BulletShield = 1.4f;
         public const float W_Kite_Invisibility = 1.0f;
         public const float W_Kite_Beckon = 0.6f;
 
@@ -181,7 +181,7 @@
         public const float W_Disengage_ManhunterPulse = 1.5f;
         public const float W_Disengage_Smokepop = 0.8f;
         public const float W_Disengage_Wallraise = 1.4f;
-        public const float W_Disengage_Skipshield = 1.2f;
+        public const float W_Disengage_BulletShield = 1.2f;
         public const float W_Disengage_Invisibility = 1.5f;
         public const float W_Disengage_Beckon = 0.0f;
 
@@ -198,7 +198,7 @@
         public const float W_CrowdControl_ManhunterPulse = 3.2f;
         public const float W_CrowdControl_Smokepop = 1.6f;
         public const float W_CrowdControl_Wallraise = 0.5f;
-        public const float W_CrowdControl_Skipshield = 1.3f;
+        public const float W_CrowdControl_BulletShield = 1.3f;
         public const float W_CrowdControl_Invisibility = 0.5f;
         public const float W_CrowdControl_Beckon = 0.4f;
 
@@ -215,7 +215,7 @@
         public const float W_Hunt_ManhunterPulse = 0.8f;
         public const float W_Hunt_Smokepop = 1.2f;
         public const float W_Hunt_Wallraise = 0.0f;
-        public const float W_Hunt_Skipshield = 1.1f;
+        public const float W_Hunt_BulletShield = 1.1f;
         public const float W_Hunt_Invisibility = 3.0f;
         public const float W_Hunt_Beckon = 1.9f;
 
@@ -232,7 +232,7 @@
         public const float W_Engulfed_ManhunterPulse = 3.0f;
         public const float W_Engulfed_Smokepop = 1.5f;
         public const float W_Engulfed_Wallraise = 0.6f;
-        public const float W_Engulfed_Skipshield = 1.4f;
+        public const float W_Engulfed_BulletShield = 1.4f;
         public const float W_Engulfed_Invisibility = 2.5f;
         public const float W_Engulfed_Beckon = 0.0f;
 
@@ -249,7 +249,7 @@
         public const float W_Survive_ManhunterPulse = 2.2f;
         public const float W_Survive_Smokepop = 3.2f;
         public const float W_Survive_Wallraise = 1.6f;
-        public const float W_Survive_Skipshield = 3.0f;
+        public const float W_Survive_BulletShield = 3.0f;
         public const float W_Survive_Invisibility = 5.0f;
         public const float W_Survive_Beckon = 0.0f;
 
@@ -263,8 +263,8 @@
         public const float BeckonMinDistance = 6f;
         public const float BeckonMaxDistance = 24.9f;
         public const float WallraiseMaxRangedDist = 28f;
-        public const float SkipshieldHpTriggerHp = 0.45f;
-        public const int SkipshieldRangedTrigger = 2;    // 2+ дальника в LOS
+        public const float BulletShieldHpTriggerHp = 0.45f;
+        public const int BulletShieldRangedTrigger = 2;    // 2+ дальника в LOS
 
         // === Pack 5 weights ===
         public const float W_Skip = 1.6f;
@@ -272,7 +272,7 @@
         public const float W_MassChaosSkip = 1.4f;  // умножается ещё на W_CrowdControl_MassChaosSkip внутри scorer'а
         public const float W_Beckon = 1.7f;  // самый большой — это лекарство от deadlock
         public const float W_Wallraise = 1.0f;
-        public const float W_Skipshield = 1.1f;
+        public const float W_BulletShield = 1.1f;
 
         // === Pack 5 stance/movement tuning ===
         public const float KiteMinDistance = 14f;   // ближе — не отступаем дальше
