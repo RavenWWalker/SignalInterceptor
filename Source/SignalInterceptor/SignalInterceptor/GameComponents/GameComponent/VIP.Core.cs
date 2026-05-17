@@ -1,5 +1,6 @@
 ﻿using RimWorld;
 using RimWorld.Planet;
+using System.Collections.Generic;
 using System.Linq;
 using Verse;
 
@@ -121,17 +122,22 @@ namespace SignalInterceptor
 
             data.rewardGiven = true;
 
+            Quest linkedQuest = FindLinkedVIPQuest(data);
+            LookTargets lookTargets = data.site != null ? new LookTargets(data.site) : LookTargets.Invalid;
+
             switch (data.subtype)
             {
                 case VIPSubtype.DoppelgangerVIP:
                     Find.LetterStack.ReceiveLetter(
                         "SI_VIP_CompletedTitle".Translate(),
                         "SI_VIP_CompletedText".Translate(),
-                        LetterDefOf.PositiveEvent
+                        LetterDefOf.PositiveEvent,
+                        lookTargets,
+                        null,
+                        linkedQuest
                     );
 
                     GiveVIPVictoryReward();
-
                     DeactivateDoppelgangerFaction(data.enemyFaction);
                     data.enemyFaction = null;
                     break;
@@ -140,21 +146,40 @@ namespace SignalInterceptor
                     Find.LetterStack.ReceiveLetter(
                         "SI_VIP_CompletedTitle".Translate(),
                         "SI_MechanitorSignal_CompletedText".Translate(),
-                        LetterDefOf.PositiveEvent
+                        LetterDefOf.PositiveEvent,
+                        lookTargets,
+                        null,
+                        linkedQuest
                     );
 
                     DeactivateRogueMechanitorFaction(data.enemyFaction);
                     data.enemyFaction = null;
                     break;
 
+                case VIPSubtype.PsycasterVIP:
+                    Find.LetterStack.ReceiveLetter(
+                        "SI_VIP_CompletedTitle".Translate(),
+                        "SI_PsycasterVIP_ExtractedText".Translate(data.psycasterPawn?.LabelShort ?? "SI_PsycasterUnknown".Translate()),
+                        LetterDefOf.PositiveEvent,
+                        lookTargets,
+                        null,
+                        linkedQuest
+                    );
+                    break;
+
                 default:
                     Find.LetterStack.ReceiveLetter(
                         "SI_VIP_CompletedTitle".Translate(),
                         "SI_VIP_CompletedText".Translate(),
-                        LetterDefOf.PositiveEvent
+                        LetterDefOf.PositiveEvent,
+                        lookTargets,
+                        null,
+                        linkedQuest
                     );
                     break;
             }
+
+            SendVIPQuestSignal(data, "SI_VIPSucceeded");
 
             Log.Message("[Signal Interceptor] VIP quest completed. Subtype=" + data.subtype);
         }
@@ -168,24 +193,31 @@ namespace SignalInterceptor
 
             data.rewardGiven = true;
 
-            string title = "SI_VIP_FailedTitle".Translate();
+            Quest linkedQuest = FindLinkedVIPQuest(data);
+            string questName = linkedQuest != null && !linkedQuest.name.NullOrEmpty()
+                ? linkedQuest.name
+                : (data.site?.LabelCap.ToString() ?? "SI_VIP_UnknownQuest".Translate().ToString());
 
-            string text;
+            string title = "SI_VIP_FailedTitle".Translate();
+            string text = "SI_VIP_FailedQuestText".Translate(questName);
 
             if (!reasonKey.NullOrEmpty() && reasonKey.CanTranslate())
             {
-                text = reasonKey.Translate().ToString();
+                text += "\n\n" + reasonKey.Translate();
             }
-            else
-            {
-                text = "SI_VIP_FailedText".Translate().ToString();
-            }
+
+            LookTargets lookTargets = data.site != null ? new LookTargets(data.site) : LookTargets.Invalid;
 
             Find.LetterStack.ReceiveLetter(
                 title,
                 text,
-                LetterDefOf.NegativeEvent
+                LetterDefOf.NegativeEvent,
+                lookTargets,
+                null,
+                linkedQuest
             );
+
+            SendVIPQuestSignal(data, "SI_VIPFailed");
 
             if (data.subtype == VIPSubtype.DoppelgangerVIP)
             {
@@ -199,9 +231,7 @@ namespace SignalInterceptor
                 data.enemyFaction = null;
             }
 
-            Log.Message("[Signal Interceptor] VIP quest failed. Subtype=" +
-                        data.subtype +
-                        " | Reason=" + reasonKey);
+            Log.Message("[Signal Interceptor] VIP quest failed. Subtype=" + data.subtype + " | Reason=" + reasonKey);
         }
 
         public void TrySpawnVIPOnMapGenerated(Map map)
@@ -380,21 +410,11 @@ namespace SignalInterceptor
 
                     if (data.subtype == VIPSubtype.PsycasterVIP)
                     {
-                        if (data.psycasterPawn == null || data.psycasterPawn.Destroyed || data.psycasterPawn.Dead)
-                        {
-                            FailVIPQuest(data, "SI_VIP_FailedText");
-                            trackedVIPSites.RemoveAt(i);
-                            continue;
-                        }
-
                         continue;
                     }
 
                     bool enemiesAlive = siteMap.mapPawns.AllPawnsSpawned
-                        .Any(p => p.Faction != null
-                               && p.Faction.HostileTo(Faction.OfPlayer)
-                               && !p.Dead
-                               && !p.Downed);
+                        .Any(p => p.Faction != null && p.Faction.HostileTo(Faction.OfPlayer) && !p.Dead && !p.Downed);
 
                     if (!enemiesAlive)
                     {
@@ -409,61 +429,298 @@ namespace SignalInterceptor
         private void TickPsycasterVIP(VIPSiteData data)
         {
             if (data == null || data.subtype != VIPSubtype.PsycasterVIP)
+            {
                 return;
+            }
 
             Pawn psycaster = data.psycasterPawn;
 
-            TickPsycasterSiteResonance(data);
-
             if (psycaster == null || psycaster.Destroyed)
             {
-                RemovePsycasterResonanceFromAllMaps(psycaster);
-                EndPsycasterResonanceConditionFromAllMaps();
-                FailVIPQuest(data, "SI_VIP_FailedText");
+                FailVIPQuest(data, "SI_PsycasterVIP_FailedDestroyedText");
                 return;
             }
 
             if (psycaster.Dead)
             {
-                RemovePsycasterResonanceFromAllMaps(psycaster);
-                EndPsycasterResonanceConditionFromAllMaps();
-                FailVIPQuest(data, "SI_VIP_FailedText");
+                FailVIPQuest(data, "SI_PsycasterVIP_FailedDeadText");
                 return;
             }
 
-            if (IsPsycasterDeliveredToPlayerSettlement(psycaster))
+            if (IsPsycasterExtractedByPlayer(psycaster))
             {
-                RemovePsycasterResonanceFromAllMaps(psycaster);
-                EndPsycasterResonanceConditionFromAllMaps();
-
                 data.psycasterDelivered = true;
                 CompleteVIPQuest(data);
                 return;
             }
 
+            /*
+             * Если пешка не заспавнена:
+             * - в караване игрока / шаттле / дропподе с пешками игрока => успех выше;
+             * - пленник колонии, но ещё просто несётся/лежит в контейнере => ждём;
+             * - не пленник колонии => считаем побегом.
+             */
             if (!psycaster.Spawned)
             {
-                RemovePsycasterResonanceFromAllMaps(psycaster);
-                EndPsycasterResonanceConditionFromAllMaps();
-
-                if (!psycaster.IsPrisonerOfColony)
+                if (psycaster.IsPrisonerOfColony)
                 {
-                    FailVIPQuest(data, "SI_VIP_FailedText");
+                    return;
                 }
 
+                FailVIPQuest(data, "SI_PsycasterVIP_FailedFledText");
                 return;
             }
 
-            if (psycaster.Spawned && psycaster.Map != null && psycaster.Map == data.site?.Map)
+            Map siteMap = data.site?.Map;
+
+            /*
+             * Если псионик заспавнен уже не на карте сайта:
+             * - в поселении игрока и пленник => успех;
+             * - иначе это побег/нештатное перемещение.
+             */
+            if (siteMap == null || psycaster.Map != siteMap)
             {
-                TickPsycasterCombatAI(data, psycaster);
+                if (IsPsycasterDeliveredToPlayerSettlement(psycaster))
+                {
+                    data.psycasterDelivered = true;
+                    CompleteVIPQuest(data);
+                    return;
+                }
+
+                FailVIPQuest(data, "SI_PsycasterVIP_FailedFledText");
+                return;
             }
-            else
-            {
-                RemovePsycasterResonanceFromAllMaps(psycaster);
-                EndPsycasterResonanceConditionFromAllMaps();
-            }
+
+            TickPsycasterCombatAI(data, psycaster);
         }
+
+        private bool IsPsycasterExtractedByPlayer(Pawn psycaster)
+        {
+            if (psycaster == null || psycaster.Dead || psycaster.Destroyed)
+            {
+                return false;
+            }
+
+            if (!psycaster.IsPrisonerOfColony)
+            {
+                return false;
+            }
+
+            if (IsPsycasterInPlayerCaravan(psycaster))
+            {
+                return true;
+            }
+
+            if (IsPsycasterInTransportWithPlayerPawn(psycaster))
+            {
+                return true;
+            }
+
+            if (IsPsycasterDeliveredToPlayerSettlement(psycaster))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsPsycasterInPlayerCaravan(Pawn psycaster)
+        {
+            if (psycaster == null)
+            {
+                return false;
+            }
+
+            List<Caravan> caravans = Find.WorldObjects.Caravans;
+
+            for (int i = 0; i < caravans.Count; i++)
+            {
+                Caravan caravan = caravans[i];
+
+                if (caravan == null)
+                {
+                    continue;
+                }
+
+                if (!caravan.IsPlayerControlled)
+                {
+                    continue;
+                }
+
+                if (caravan.PawnsListForReading != null && caravan.PawnsListForReading.Contains(psycaster))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsPsycasterInTransportWithPlayerPawn(Pawn psycaster)
+        {
+            if (psycaster == null)
+            {
+                return false;
+            }
+
+            IThingHolder holder = psycaster.ParentHolder;
+
+            while (holder != null)
+            {
+                if (IsTransportLikeHolder(holder))
+                {
+                    List<Thing> containedThings = ThingOwnerUtility.GetAllThingsRecursively(holder, allowUnreal: true);
+
+                    bool containsPsycaster = false;
+                    bool containsPlayerPawn = false;
+
+                    for (int i = 0; i < containedThings.Count; i++)
+                    {
+                        Pawn pawn = containedThings[i] as Pawn;
+
+                        if (pawn == null)
+                        {
+                            continue;
+                        }
+
+                        if (pawn == psycaster)
+                        {
+                            containsPsycaster = true;
+                            continue;
+                        }
+
+                        if (IsPlayerExtractionPawn(pawn))
+                        {
+                            containsPlayerPawn = true;
+                        }
+                    }
+
+                    if (containsPsycaster && containsPlayerPawn)
+                    {
+                        return true;
+                    }
+                }
+
+                holder = holder.ParentHolder;
+            }
+
+            return false;
+        }
+
+        private bool IsTransportLikeHolder(IThingHolder holder)
+        {
+            if (holder == null)
+            {
+                return false;
+            }
+
+            if (holder is Caravan caravan)
+            {
+                return caravan.IsPlayerControlled;
+            }
+
+            string typeName = holder.GetType().Name;
+
+            if (typeName.Contains("Transport"))
+            {
+                return true;
+            }
+
+            if (typeName.Contains("DropPod"))
+            {
+                return true;
+            }
+
+            if (typeName.Contains("Shuttle"))
+            {
+                return true;
+            }
+
+            if (typeName.Contains("Launchable"))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsPlayerExtractionPawn(Pawn pawn)
+        {
+            if (pawn == null || pawn.Dead || pawn.Destroyed)
+            {
+                return false;
+            }
+
+            if (pawn.Faction == Faction.OfPlayer)
+            {
+                return true;
+            }
+
+            if (pawn.IsColonist)
+            {
+                return true;
+            }
+
+            if (pawn.IsPrisonerOfColony)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private Quest FindLinkedVIPQuest(VIPSiteData data)
+        {
+            if (data == null || data.site == null || data.site.questTags.NullOrEmpty())
+            {
+                return null;
+            }
+
+            List<string> siteTags = data.site.questTags;
+
+            List<Quest> quests = Find.QuestManager.QuestsListForReading;
+
+            for (int i = 0; i < quests.Count; i++)
+            {
+                Quest quest = quests[i];
+
+                if (quest == null)
+                {
+                    continue;
+                }
+
+                if (quest.State != QuestState.Ongoing)
+                {
+                    continue;
+                }
+
+                if (quest.tags.NullOrEmpty())
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < quest.tags.Count; j++)
+                {
+                    if (siteTags.Contains(quest.tags[j]))
+                    {
+                        return quest;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private void SendVIPQuestSignal(VIPSiteData data, string signalPart)
+        {
+            if (data == null || data.site == null || data.site.questTags.NullOrEmpty())
+            {
+                return;
+            }
+
+            QuestUtility.SendQuestTargetSignals(data.site.questTags, signalPart);
+        }
+
 
         private bool IsPsycasterDeliveredToPlayerSettlement(Pawn psycaster)
         {

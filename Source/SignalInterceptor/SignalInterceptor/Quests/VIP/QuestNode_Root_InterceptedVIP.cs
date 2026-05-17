@@ -198,6 +198,11 @@ namespace SignalInterceptor
             string questTag = QuestGenUtility.HardcodedTargetQuestTagWithQuestID("InterceptedVIP");
             QuestUtility.AddQuestTag(ref site.questTags, questTag);
 
+            if (!quest.tags.Contains(questTag))
+            {
+                quest.tags.Add(questTag);
+            }
+
             quest.SpawnWorldObject(site);
 
             /*
@@ -212,7 +217,24 @@ namespace SignalInterceptor
              * - если карта уже активна — таймаут отключается и бой/событие доигрывается нормально.
              */
 
-            string allEnemiesDefeatedSignal = QuestGenUtility.QuestTagSignal(questTag, "AllEnemiesDefeated");
+            /*
+             * Таймер нужен именно как QuestPart_Delay, чтобы в списке квестов показывалось
+             * оставшееся время до истечения задания, а не время с момента принятия.
+             *
+             * ВАЖНО:
+             * Не используем quest.WorldObjectTimeout(site, timeoutTicks),
+             * потому что он может уничтожить world object.
+             * Сам провал по таймеру всё ещё контролируется SignalInterceptorGameComponent.TickVIPSites().
+             */
+            quest.Delay(
+                timeoutTicks,
+                null,
+                outSignalComplete: "SI_VIPTimeout",
+                isQuestTimeout: true,
+                debugLabel: "SignalInterceptorVIPTimeout"
+            );
+
+            string vipSucceededSignal = QuestGenUtility.QuestTagSignal(questTag, "SI_VIPSucceeded");
             quest.SignalPass(delegate
             {
                 quest.End(
@@ -223,9 +245,9 @@ namespace SignalInterceptor
                     QuestPart.SignalListenMode.OngoingOnly,
                     sendStandardLetter: false
                 );
-            }, allEnemiesDefeatedSignal);
+            }, vipSucceededSignal);
 
-            string mapRemovedSignal = QuestGenUtility.QuestTagSignal(questTag, "MapRemoved");
+            string vipFailedSignal = QuestGenUtility.QuestTagSignal(questTag, "SI_VIPFailed");
             quest.SignalPass(delegate
             {
                 quest.End(
@@ -236,20 +258,7 @@ namespace SignalInterceptor
                     QuestPart.SignalListenMode.OngoingOnly,
                     sendStandardLetter: false
                 );
-            }, mapRemovedSignal);
-
-            string siteDestroyedSignal = QuestGenUtility.HardcodedSignalWithQuestID("site.Destroyed");
-            quest.SignalPass(delegate
-            {
-                quest.End(
-                    QuestEndOutcome.Fail,
-                    0,
-                    null,
-                    null,
-                    QuestPart.SignalListenMode.OngoingOnly,
-                    sendStandardLetter: false
-                );
-            }, siteDestroyedSignal);
+            }, vipFailedSignal);
 
             SignalInterceptorGameComponent comp = Current.Game.GetComponent<SignalInterceptorGameComponent>();
             if (comp != null)

@@ -220,7 +220,13 @@
   <SI_PsycasterNeurostormText>Психический шок, нанесённый {0}, разорвал прочную связь с древом души, что спровоцировало спонтанное возникновение нейрошторма. И ваши колонисты, и все остальные на планете слышат громкий вопль, раздающийся где-то в закоулках сознания. Этот голос громким металлическим отзвуком повторяет несколько раз: "Это их вина! Это их вина!" И, хотя голос явно не указывает на виновных, у каждого обитателя этого мира в голове возникает чёткий образ вашего поселения. Кажется, вы только что испортили отношения со всеми возможными фракциями сразу. Более того, все ваши колонисты, участвовавшие в захвате {0}, впали в случайные нервные срывы.</SI_PsycasterNeurostormText>
   <SI_PsycasterNeurostormMentalBreakReason>нейрошторм</SI_PsycasterNeurostormMentalBreakReason>
 
+  <SI_VIP_FailedQuestText>Вы провалили задание {0}.</SI_VIP_FailedQuestText>
+  <SI_VIP_UnknownQuest>неизвестное задание</SI_VIP_UnknownQuest>
   <SI_PsycasterUnknown>неизвестный псионик</SI_PsycasterUnknown>
+  <SI_PsycasterVIP_ExtractedText>Псионик {0} был успешно вывезен с сайта. Задание выполнено.</SI_PsycasterVIP_ExtractedText>
+  <SI_PsycasterVIP_FailedDeadText>Псионик погиб.</SI_PsycasterVIP_FailedDeadText>
+  <SI_PsycasterVIP_FailedDestroyedText>Псионик был потерян.</SI_PsycasterVIP_FailedDestroyedText>
+  <SI_PsycasterVIP_FailedFledText>Псионик сбежал с сайта.</SI_PsycasterVIP_FailedFledText>
 
   <SI_PsycasterTreeDestroyedTitle>Древо души уничтожено</SI_PsycasterTreeDestroyedTitle>
   <SI_PsycasterTreeDestroyedText>Древо души, с которым был связан могущественный псионик {0}, было уничтожено. Это ослабило защитные механизмы {0}, и теперь он вновь восприимчив к пси-атакам. Вы также чувствуете, что окружающее пси-поле постепенно утихает, из-за чего психочувствительность всех живых существ в данной местности возвращается к исходной.</SI_PsycasterTreeDestroyedText>
