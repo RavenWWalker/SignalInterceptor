@@ -88,6 +88,7 @@ namespace SignalInterceptor
             if (TryFindPsycasterAnimaTree(map, out animaTree))
             {
                 data.psycasterAnimaTree = animaTree;
+                data.psycasterAnimaTreeLinked = true;
                 data.signalCampCenter = animaTree.Position;
                 anchor = animaTree.Position;
             }

@@ -14,11 +14,46 @@ namespace SignalInterceptor
 
         public static bool HasPsycasterTreeShield(Pawn pawn)
         {
-            if (pawn == null || pawn.health == null || pawn.health.hediffSet == null)
+            if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.health == null || pawn.health.hediffSet == null)
                 return false;
 
             HediffDef shieldDef = DefDatabase<HediffDef>.GetNamedSilentFail(PsycasterTreeShieldHediffDefName);
-            return shieldDef != null && pawn.health.hediffSet.HasHediff(shieldDef);
+
+            if (shieldDef == null)
+                return false;
+
+            if (!pawn.health.hediffSet.HasHediff(shieldDef))
+                return false;
+
+            SignalInterceptorGameComponent comp = Current.Game?.GetComponent<SignalInterceptorGameComponent>();
+
+            if (comp == null)
+                return false;
+
+            VIPSiteData data = comp.trackedVIPSites
+                .FirstOrDefault(d =>
+                    d != null
+                    && !d.rewardGiven
+                    && d.subtype == VIPSubtype.PsycasterVIP
+                    && d.psycasterPawn == pawn);
+
+            if (data == null)
+            {
+                comp.RemovePsycasterTreeShield(pawn);
+                return false;
+            }
+
+            Map map = data.site != null && data.site.HasMap
+                ? data.site.Map
+                : pawn.Map;
+
+            if (!IsLinkedPsycasterAnimaTree(data, data.psycasterAnimaTree, map))
+            {
+                comp.RemovePsycasterTreeShield(pawn);
+                return false;
+            }
+
+            return true;
         }
 
         private void TickPsycasterSiteResonance(VIPSiteData data)
@@ -46,26 +81,113 @@ namespace SignalInterceptor
                 return;
             }
 
-            bool hadKnownTree = data.psycasterAnimaTree != null;
-            bool knownTreeInvalid = hadKnownTree && !IsValidPsycasterAnimaTree(data.psycasterAnimaTree, siteMap);
-
-            Thing tree = GetOrFindPsycasterAnimaTree(data, siteMap);
-
-            if (!IsValidPsycasterAnimaTree(tree, siteMap))
+            /*
+             * Старые сейвы/текущие сейвы могли не иметь psycasterAnimaTreeLinked,
+             * но если уже есть shield/resonance/condition/центр лагеря — считаем,
+             * что дерево было связано.
+             */
+            if (!data.psycasterAnimaTreeLinked && HasAnyPsycasterResonanceState(data, psycaster, siteMap))
             {
-                if (knownTreeInvalid)
+                data.psycasterAnimaTreeLinked = true;
+            }
+
+            /*
+             * Если дерево уже было связано — больше НЕ ищем любое другое дерево на карте.
+             * Проверяем только сохранённое linked tree.
+             */
+            if (data.psycasterAnimaTreeLinked)
+            {
+                if (!IsLinkedPsycasterAnimaTree(data, data.psycasterAnimaTree, siteMap))
                 {
                     SendPsycasterTreeDestroyedLetter(data, psycaster);
+
+                    RemovePsycasterResonanceFromMap(siteMap);
+                    RemovePsycasterTreeShield(psycaster);
+                    EndPsycasterResonanceCondition(siteMap);
+
+                    Log.Message("[Signal Interceptor] Psycaster linked anima tree is gone. Resonance disabled. " +
+                                "Pawn=" + psycaster.LabelShort +
+                                " | Site=" + (data.site?.LabelCap.ToString() ?? "null") +
+                                " | Anchor=" + data.signalCampCenter +
+                                " | TreeRef=" + (data.psycasterAnimaTree != null ? data.psycasterAnimaTree.ToString() : "null"));
+
+                    return;
                 }
 
+                EnsurePsycasterResonanceCondition(siteMap, data.psycasterAnimaTree, psycaster);
+                ApplyPsycasterResonanceToMap(siteMap, psycaster);
+                return;
+            }
+
+            /*
+             * Первый тик после генерации/старый сейв без явной привязки.
+             * Ищем только дерево рядом с signalCampCenter.
+             */
+            Plant foundTree;
+
+            if (!TryFindLinkedPsycasterAnimaTree(data, siteMap, out foundTree))
+            {
                 RemovePsycasterResonanceFromMap(siteMap);
                 RemovePsycasterTreeShield(psycaster);
                 EndPsycasterResonanceCondition(siteMap);
                 return;
             }
 
-            EnsurePsycasterResonanceCondition(siteMap, tree, psycaster);
+            data.psycasterAnimaTree = foundTree;
+            data.psycasterAnimaTreeLinked = true;
+
+            if (data.signalCampCenter == IntVec3.Invalid)
+            {
+                data.signalCampCenter = foundTree.Position;
+            }
+
+            EnsurePsycasterResonanceCondition(siteMap, foundTree, psycaster);
             ApplyPsycasterResonanceToMap(siteMap, psycaster);
+        }
+
+        private bool HasAnyPsycasterResonanceState(VIPSiteData data, Pawn psycaster, Map map)
+        {
+            if (data == null)
+                return false;
+
+            if (data.psycasterAnimaTree != null)
+                return true;
+
+            if (data.signalCampCenter.IsValid)
+                return true;
+
+            if (psycaster != null && HasPsycasterTreeShield(psycaster))
+                return true;
+
+            if (map != null)
+            {
+                GameConditionDef conditionDef = DefDatabase<GameConditionDef>.GetNamedSilentFail(PsycasterResonanceConditionDefName);
+
+                if (conditionDef != null &&
+                    map.gameConditionManager.ActiveConditions.Any(c => c != null && c.def == conditionDef))
+                {
+                    return true;
+                }
+
+                HediffDef resonanceDef = DefDatabase<HediffDef>.GetNamedSilentFail(PsycasterResonanceHediffDefName);
+
+                if (resonanceDef != null)
+                {
+                    IReadOnlyList<Pawn> pawns = map.mapPawns.AllPawnsSpawned;
+
+                    for (int i = 0; i < pawns.Count; i++)
+                    {
+                        Pawn pawn = pawns[i];
+
+                        if (pawn?.health?.hediffSet != null && pawn.health.hediffSet.HasHediff(resonanceDef))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
         }
 
         private void SendPsycasterTreeDestroyedLetter(VIPSiteData data, Pawn psycaster)
@@ -82,14 +204,28 @@ namespace SignalInterceptor
                 ? psycaster.LabelShort
                 : "SI_PsycasterUnknown".Translate().ToString();
 
+            LookTargets lookTargets = LookTargets.Invalid;
+
+            if (psycaster != null && !psycaster.Destroyed)
+            {
+                lookTargets = new LookTargets(psycaster);
+            }
+            else if (data.site != null)
+            {
+                lookTargets = new LookTargets(data.site);
+            }
+
             Find.LetterStack.ReceiveLetter(
                 "SI_PsycasterTreeDestroyedTitle".Translate(),
                 "SI_PsycasterTreeDestroyedText".Translate(psycasterName),
                 LetterDefOf.NeutralEvent,
-                psycaster != null ? new LookTargets(psycaster) : null
+                lookTargets
             );
 
-            Log.Message("[Signal Interceptor] Psycaster anima tree destroyed. Shield and resonance removed. Psycaster=" + psycasterName);
+            Log.Message("[Signal Interceptor] Psycaster anima tree destroyed letter sent. " +
+                        "Psycaster=" + psycasterName +
+                        " | Site=" + (data.site?.LabelCap.ToString() ?? "null") +
+                        " | Anchor=" + data.signalCampCenter);
         }
 
 
@@ -98,13 +234,21 @@ namespace SignalInterceptor
             if (data == null || map == null)
                 return null;
 
-            if (IsValidPsycasterAnimaTree(data.psycasterAnimaTree, map))
+            if (IsLinkedPsycasterAnimaTree(data, data.psycasterAnimaTree, map))
                 return data.psycasterAnimaTree;
 
+            /*
+             * Если связь уже была установлена — не ищем новое дерево.
+             */
+            if (data.psycasterAnimaTreeLinked)
+                return null;
+
             Plant tree;
-            if (TryFindPsycasterAnimaTree(map, out tree))
+
+            if (TryFindLinkedPsycasterAnimaTree(data, map, out tree))
             {
                 data.psycasterAnimaTree = tree;
+                data.psycasterAnimaTreeLinked = true;
 
                 if (data.signalCampCenter == IntVec3.Invalid)
                 {
@@ -117,7 +261,7 @@ namespace SignalInterceptor
             return null;
         }
 
-        private bool IsValidPsycasterAnimaTree(Thing tree, Map map)
+        private static bool IsValidPsycasterAnimaTree(Thing tree, Map map)
         {
             if (tree == null || tree.Destroyed || !tree.Spawned || tree.Map != map)
                 return false;
@@ -126,6 +270,58 @@ namespace SignalInterceptor
                 return false;
 
             return true;
+        }
+
+        private static bool IsLinkedPsycasterAnimaTree(VIPSiteData data, Thing tree, Map map)
+        {
+            if (data == null)
+                return false;
+
+            if (!IsValidPsycasterAnimaTree(tree, map))
+                return false;
+
+            if (data.signalCampCenter.IsValid)
+            {
+                float distance = tree.Position.DistanceTo(data.signalCampCenter);
+
+                if (distance > 14f)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private bool TryFindLinkedPsycasterAnimaTree(VIPSiteData data, Map map, out Plant tree)
+        {
+            tree = null;
+
+            if (data == null || map == null)
+                return false;
+
+            ThingDef animaTreeDef = DefDatabase<ThingDef>.GetNamedSilentFail("Plant_TreeAnima");
+
+            if (animaTreeDef == null)
+                return false;
+
+            List<Plant> candidates = map.listerThings.ThingsOfDef(animaTreeDef)
+                .OfType<Plant>()
+                .Where(p => IsLinkedPsycasterAnimaTree(data, p, map))
+                .ToList();
+
+            if (candidates.Count == 0)
+                return false;
+
+            if (data.signalCampCenter.IsValid)
+            {
+                tree = candidates
+                    .OrderBy(p => p.Position.DistanceTo(data.signalCampCenter))
+                    .FirstOrDefault();
+
+                return tree != null;
+            }
+
+            tree = candidates.RandomElementWithFallback(null);
+            return tree != null;
         }
 
         private bool TryFindPsycasterAnimaTree(Map map, out Plant tree)

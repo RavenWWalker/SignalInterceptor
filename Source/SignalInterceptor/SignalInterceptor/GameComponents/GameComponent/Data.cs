@@ -44,6 +44,7 @@ namespace SignalInterceptor
         public bool psycasterDestabilized;
         public bool psycasterWasShocked;
         public Thing psycasterAnimaTree;
+        public bool psycasterAnimaTreeLinked;
         public bool psycasterNeurostormTriggered;
         public bool psycasterTreeDestroyedLetterSent;
 
@@ -98,6 +99,7 @@ namespace SignalInterceptor
             Scribe_Values.Look(ref psycasterDestabilized, "psycasterDestabilized", false);
             Scribe_Values.Look(ref psycasterWasShocked, "psycasterWasShocked", false);
             Scribe_References.Look(ref psycasterAnimaTree, "psycasterAnimaTree");
+            Scribe_Values.Look(ref psycasterAnimaTreeLinked, "psycasterAnimaTreeLinked", false);
             Scribe_Values.Look(ref psycasterNeurostormTriggered, "psycasterNeurostormTriggered", false);
             Scribe_Values.Look(ref psycasterTreeDestroyedLetterSent, "psycasterTreeDestroyedLetterSent", false);
         }
