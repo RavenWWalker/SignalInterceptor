@@ -115,6 +115,7 @@
     <Compile Include="Patches\Patch_DropShuttle_ClampCell.cs" />
     <Compile Include="Patches\Patch_FactionDialog.cs" />
     <Compile Include="Patches\Patch_PsycasterTreeShield.cs" />
+    <Compile Include="Patches\Patch_SocialFightingNullGuard.cs" />
     <Compile Include="Patches\Patch_WorldIconUtility.cs" />
     <Compile Include="Patches\Patch_PsycasterDamageTracking.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

@@ -347,17 +347,22 @@ namespace SignalInterceptor
 
         private bool TryForceRandomMentalBreak(Pawn pawn)
         {
-            if (pawn == null || pawn.mindState == null)
+            if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed)
+                return false;
+
+            if (pawn.mindState == null || pawn.mindState.mentalStateHandler == null)
                 return false;
 
             string reason = "SI_PsycasterNeurostormMentalBreakReason".Translate();
 
             if (pawn.RaceProps != null && pawn.RaceProps.Humanlike)
             {
-                if (TryDoRandomMentalBreakByReflection(pawn, reason))
-                    return true;
-
                 return TryStartFallbackHumanlikeMentalState(pawn, reason);
+            }
+
+            if (pawn.RaceProps != null && pawn.RaceProps.Animal)
+            {
+                return TryStartFallbackAnimalMentalState(pawn, reason);
             }
 
             return TryStartFallbackAnimalMentalState(pawn, reason);
@@ -398,7 +403,10 @@ namespace SignalInterceptor
 
         private bool TryStartFallbackHumanlikeMentalState(Pawn pawn, string reason)
         {
-            if (pawn == null || pawn.mindState == null || pawn.mindState.mentalStateHandler == null)
+            if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed)
+                return false;
+
+            if (pawn.mindState == null || pawn.mindState.mentalStateHandler == null)
                 return false;
 
             List<string> stateNames = new List<string>
@@ -408,11 +416,7 @@ namespace SignalInterceptor
                 "Wander_Psychotic",
                 "Wander_Sad",
                 "Tantrum",
-                "FireStartingSpree",
-                "InsultingSpree",
-                "SocialFighting",
-                "MurderousRage",
-                "CorpseObsession"
+                "FireStartingSpree"
             };
 
             stateNames.Shuffle();
@@ -433,7 +437,10 @@ namespace SignalInterceptor
 
         private bool TryStartFallbackAnimalMentalState(Pawn pawn, string reason)
         {
-            if (pawn == null || pawn.mindState == null || pawn.mindState.mentalStateHandler == null)
+            if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed)
+                return false;
+
+            if (pawn.mindState == null || pawn.mindState.mentalStateHandler == null)
                 return false;
 
             List<string> stateNames = new List<string>
@@ -462,9 +469,30 @@ namespace SignalInterceptor
 
         private bool TryStartMentalStateByReflection(Pawn pawn, MentalStateDef def, string reason)
         {
+            if (pawn == null || pawn.Destroyed || pawn.Dead || pawn.Downed)
+                return false;
+
+            if (pawn.mindState == null || pawn.mindState.mentalStateHandler == null)
+                return false;
+
+            if (def == null)
+                return false;
+
+            if (def.defName == "SocialFighting")
+                return false;
+
+            if (def.defName == "MurderousRage")
+                return false;
+
+            if (def.defName == "InsultingSpree")
+                return false;
+
+            if (def.defName == "CorpseObsession")
+                return false;
+
             object handler = pawn.mindState.mentalStateHandler;
 
-            if (handler == null || def == null)
+            if (handler == null)
                 return false;
 
             MethodInfo method = handler.GetType()
@@ -500,7 +528,7 @@ namespace SignalInterceptor
                     }
                     else if (type == typeof(bool))
                     {
-                        args[i] = true;
+                        args[i] = false;
                     }
                     else if (type.IsValueType)
                     {
@@ -519,8 +547,13 @@ namespace SignalInterceptor
 
                 return pawn.InMentalState;
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Warning("[Signal Interceptor] Failed to start neurostorm mental state. " +
+                            "Pawn=" + pawn.LabelShort +
+                            " | MentalState=" + def.defName +
+                            " | Exception=" + ex);
+
                 return false;
             }
         }

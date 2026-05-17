@@ -81,20 +81,11 @@ namespace SignalInterceptor
                 return;
             }
 
-            /*
-             * Старые сейвы/текущие сейвы могли не иметь psycasterAnimaTreeLinked,
-             * но если уже есть shield/resonance/condition/центр лагеря — считаем,
-             * что дерево было связано.
-             */
             if (!data.psycasterAnimaTreeLinked && HasAnyPsycasterResonanceState(data, psycaster, siteMap))
             {
                 data.psycasterAnimaTreeLinked = true;
             }
 
-            /*
-             * Если дерево уже было связано — больше НЕ ищем любое другое дерево на карте.
-             * Проверяем только сохранённое linked tree.
-             */
             if (data.psycasterAnimaTreeLinked)
             {
                 if (!IsLinkedPsycasterAnimaTree(data, data.psycasterAnimaTree, siteMap))
@@ -105,11 +96,22 @@ namespace SignalInterceptor
                     RemovePsycasterTreeShield(psycaster);
                     EndPsycasterResonanceCondition(siteMap);
 
-                    Log.Message("[Signal Interceptor] Psycaster linked anima tree is gone. Resonance disabled. " +
-                                "Pawn=" + psycaster.LabelShort +
-                                " | Site=" + (data.site?.LabelCap.ToString() ?? "null") +
-                                " | Anchor=" + data.signalCampCenter +
-                                " | TreeRef=" + (data.psycasterAnimaTree != null ? data.psycasterAnimaTree.ToString() : "null"));
+                    if (!data.psycasterTreeDestroyedLetterSent)
+                    {
+                        Log.Message("[Signal Interceptor] Psycaster linked anima tree is gone. Resonance disabled. " +
+                                    "Pawn=" + psycaster.LabelShort +
+                                    " | Site=" + (data.site?.LabelCap.ToString() ?? "null") +
+                                    " | Anchor=" + data.signalCampCenter +
+                                    " | TreeRef=" + (data.psycasterAnimaTree != null ? data.psycasterAnimaTree.ToString() : "null"));
+                    }
+
+                    data.psycasterAnimaTree = null;
+                    data.signalCampCenter = psycaster.Position;
+
+                    if (data.psycasterBrain != null)
+                    {
+                        data.psycasterBrain.HomeAnchor = psycaster.Position;
+                    }
 
                     return;
                 }
@@ -119,10 +121,6 @@ namespace SignalInterceptor
                 return;
             }
 
-            /*
-             * Первый тик после генерации/старый сейв без явной привязки.
-             * Ищем только дерево рядом с signalCampCenter.
-             */
             Plant foundTree;
 
             if (!TryFindLinkedPsycasterAnimaTree(data, siteMap, out foundTree))
