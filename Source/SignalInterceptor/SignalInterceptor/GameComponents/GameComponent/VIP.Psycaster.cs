@@ -126,7 +126,6 @@ namespace SignalInterceptor
                 data.signalCampCenter = spot;
             }
 
-            TryApplyInitialPsycasterBuffs(data, psycaster);
             TickPsycasterSiteResonance(data);
 
             if (psycaster.mindState == null)
@@ -346,15 +345,6 @@ namespace SignalInterceptor
             }
 
             return fallback;
-        }
-
-        private void TryApplyInitialPsycasterBuffs(VIPSiteData data, Pawn psycaster)
-        {
-            // Старая логика «применить Focus один раз при спавне» теперь живёт в PsycasterBrain
-            // (он сам кастует Focus в Opening стансе). Здесь оставляем no-op для совместимости
-            // с местами, которые могут вызывать этот метод (например, SpawnPsycasterVIP).
-            //
-            // Сам спавн Focus сделает Brain в первом тике после grace-периода.
         }
 
         private void PreparePsycasterVIPPawn(Pawn pawn, int tier, int psylinkLevel)
@@ -807,27 +797,6 @@ namespace SignalInterceptor
             if (direct != null)
                 return direct;
 
-            string[] aliases = null;
-
-            if (name == "BulletShield" || name == "BulletShield")
-            {
-                aliases = new[]
-                {
-            "BulletShield"
-        };
-            }
-
-            if (aliases != null)
-            {
-                for (int i = 0; i < aliases.Length; i++)
-                {
-                    AbilityDef aliasDef = DefDatabase<AbilityDef>.GetNamedSilentFail(aliases[i]);
-
-                    if (aliasDef != null)
-                        return aliasDef;
-                }
-            }
-
             return DefDatabase<AbilityDef>.AllDefsListForReading
                 .FirstOrDefault(def =>
                     def != null &&
@@ -1006,8 +975,6 @@ namespace SignalInterceptor
 
             if (psycaster.jobs == null)
                 return false;
-
-            Map map = psycaster.Map;
 
             if (!psycaster.CanReach(target, PathEndMode.Touch, Danger.Deadly))
                 return false;

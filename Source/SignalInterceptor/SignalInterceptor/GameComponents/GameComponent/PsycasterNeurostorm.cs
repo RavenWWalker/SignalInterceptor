@@ -524,35 +524,5 @@ namespace SignalInterceptor
                 return false;
             }
         }
-
-        private object[] BuildReflectionArgs(MethodInfo method, string reason)
-        {
-            ParameterInfo[] ps = method.GetParameters();
-            object[] args = new object[ps.Length];
-
-            for (int i = 0; i < ps.Length; i++)
-            {
-                Type type = ps[i].ParameterType;
-
-                if (type == typeof(string))
-                {
-                    args[i] = reason;
-                }
-                else if (type == typeof(bool))
-                {
-                    args[i] = false;
-                }
-                else if (type.IsValueType)
-                {
-                    args[i] = Activator.CreateInstance(type);
-                }
-                else
-                {
-                    args[i] = null;
-                }
-            }
-
-            return args;
-        }
     }
 }
