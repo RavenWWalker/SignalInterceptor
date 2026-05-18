@@ -65,7 +65,17 @@
     <Compile Include="AI\Psycaster\EnemyAssessment.cs" />
     <Compile Include="AI\Psycaster\EnemyRole.cs" />
     <Compile Include="AI\Psycaster\IAbilityScorer.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Action.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Combat.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Core.cs" />
     <Compile Include="AI\Psycaster\PsycasterBrain.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Emergency.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.KillContract.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Leash.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.PendingMelee.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Recovery.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Tick.cs" />
+    <Compile Include="AI\Psycaster\PsycasterBrain.Utility.cs" />
     <Compile Include="AI\Psycaster\PsycasterStance.cs" />
     <Compile Include="AI\Psycaster\PsycasterTuning.cs" />
     <Compile Include="AI\Psycaster\ReactiveTriggers.cs" />
