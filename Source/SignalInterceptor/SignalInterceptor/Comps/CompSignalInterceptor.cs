@@ -71,25 +71,36 @@ namespace SignalInterceptor
 
         public bool OnScanTick(Pawn worker)
         {
-            float intellectLevel = worker.skills.GetSkill(SkillDefOf.Intellectual).Level;
+            // Обновляем только раз в 60 тиков (~1 сек)
+            if (Find.TickManager.TicksGame % 60 != 0)
+                return false;
+
+            float intellectLevel =
+                worker.skills.GetSkill(SkillDefOf.Intellectual).Level;
+
             float speedMultiplier = intellectLevel / 10f;
 
             if (speedMultiplier < 0.1f)
                 speedMultiplier = 0.1f;
 
-            daysWorkedSinceLastFind += speedMultiplier / 60000f;
+            // Добавляем прогресс за 60 тиков
+            daysWorkedSinceLastFind +=
+                speedMultiplier * 60f / 60000f;
 
-            if (Find.TickManager.TicksGame % 59 == 0)
+            // MTB-проверка тоже раз в 60 тиков
+            if (Rand.MTBEventOccurs(
+                Props.scanFindMtbDays / speedMultiplier,
+                60000f,
+                60f))
             {
-                if (Rand.MTBEventOccurs(Props.scanFindMtbDays / speedMultiplier, 60000f, 59f))
-                {
-                    DoFind(worker);
-                    daysWorkedSinceLastFind = 0f;
-                    return true;
-                }
+                DoFind(worker);
+                daysWorkedSinceLastFind = 0f;
+                return true;
             }
 
-            if (daysWorkedSinceLastFind >= Props.scanFindGuaranteedDays)
+            // Гарантированная находка
+            if (daysWorkedSinceLastFind >=
+                Props.scanFindGuaranteedDays)
             {
                 DoFind(worker);
                 daysWorkedSinceLastFind = 0f;
@@ -98,7 +109,6 @@ namespace SignalInterceptor
 
             return false;
         }
-
         public float ScanProgress => daysWorkedSinceLastFind / Props.scanFindGuaranteedDays;
 
         private void DoFind(Pawn worker)

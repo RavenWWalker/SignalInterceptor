@@ -7,8 +7,6 @@ namespace SignalInterceptor
 {
     public class JobDriver_ScanSignals : JobDriver
     {
-        private const int SessionDurationTicks = 2500;
-
         private CompSignalInterceptor Comp
             => TargetThingA?.TryGetComp<CompSignalInterceptor>();
 
@@ -29,22 +27,32 @@ namespace SignalInterceptor
             this.FailOnDespawnedNullOrForbidden(TargetIndex.A);
             this.FailOnBurningImmobile(TargetIndex.A);
 
-            // Проверяем сканирование перед началом и во время работы
             this.FailOn(delegate
             {
                 CompSignalInterceptor comp = Comp;
-                return comp == null || !comp.ScanningEnabled;
+
+                if (comp == null)
+                    return true;
+
+                if (!comp.ScanningEnabled)
+                    return true;
+
+                CompPowerTrader power =
+                    comp.parent.GetComp<CompPowerTrader>();
+
+                if (power != null && !power.PowerOn)
+                    return true;
+
+                return false;
             });
 
-            // Шаг 1: Идём к консоли
-            yield return Toils_Goto.GotoThing(TargetIndex.A, PathEndMode.InteractionCell);
-
-            // Шаг 2: Сканируем один сеанс
             Toil scan = ToilMaker.MakeToil("ScanSignals");
+
             scan.initAction = delegate
             {
                 pawn.rotationTracker.FaceTarget(TargetThingA);
             };
+
             scan.tickAction = delegate
             {
                 pawn.rotationTracker.FaceTarget(TargetThingA);
@@ -56,10 +64,16 @@ namespace SignalInterceptor
                     comp.OnScanTick(pawn);
                 }
             };
+
             scan.handlingFacing = true;
             scan.defaultCompleteMode = ToilCompleteMode.Delay;
-            scan.defaultDuration = SessionDurationTicks;
+
+            // БЕРЁМ длительность из CompProperties
+            scan.defaultDuration =
+                Comp?.Props?.scanDurationTicks ?? 5000;
+
             scan.activeSkill = () => SkillDefOf.Intellectual;
+
             yield return scan;
         }
     }

@@ -68,7 +68,6 @@
     <Compile Include="AI\Psycaster\PsycasterBrain.Action.cs" />
     <Compile Include="AI\Psycaster\PsycasterBrain.Combat.cs" />
     <Compile Include="AI\Psycaster\PsycasterBrain.Core.cs" />
-    <Compile Include="AI\Psycaster\PsycasterBrain.cs" />
     <Compile Include="AI\Psycaster\PsycasterBrain.Emergency.cs" />
     <Compile Include="AI\Psycaster\PsycasterBrain.KillContract.cs" />
     <Compile Include="AI\Psycaster\PsycasterBrain.Leash.cs" />
